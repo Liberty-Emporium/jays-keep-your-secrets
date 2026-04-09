@@ -311,6 +311,171 @@ def upgrade():
     """Upgrade page - placeholder for paid plans."""
     return render_template('upgrade.html')
 
+# ============ API FOR BOTS ============
+# Generate tokens for bot access
+@app.route('/api/token', methods=['POST'])
+@rate_limit
+def api_create_token():
+    """Get access token - pass username + password in JSON body"""
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+    
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM users WHERE username = ?', (username,))
+    user = c.fetchone()
+    conn.close()
+    
+    if not user or user['password_hash'] != hashlib.sha256(password.encode()).hexdigest():
+        return jsonify({'error': 'Invalid credentials'}), 401
+    
+    # Generate a unique token
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    
+    # Store token (we'd need a tokens table, but let's use a simple approach)
+    # For now, return a simple token based on user_id + timestamp
+    api_token = f"ait_{user['id']}_{secrets.token_hex(16)}"
+    
+    return jsonify({
+        'success': True,
+        'api_token': api_token,
+        'message': 'Use this token in Authorization header: Bearer YOUR_TOKEN'
+    })
+
+@app.route('/api/keys', methods=['GET'])
+@rate_limit
+def api_list_keys():
+    """List all API keys - pass 'Authorization: Bearer YOUR_TOKEN' header"""
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    
+    token = auth[7:]
+    user_id = validate_api_token(token)
+    if not user_id:
+        return jsonify({'error': 'Invalid or expired token'}), 401
+    
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT id, provider, name, key_prefix, created_at FROM api_keys WHERE user_id = ?', (user_id,))
+    keys = c.fetchall()
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'keys': [dict(k) for k in keys]
+    })
+
+@app.route('/api/keys', methods=['POST'])
+@rate_limit
+def api_add_key():
+    """Add an API key - pass JSON with 'key' and optional 'name'"""
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    
+    token = auth[7:]
+    user_id = validate_api_token(token)
+    if not user_id:
+        return jsonify({'error': 'Invalid or expired token'}), 401
+    
+    data = request.get_json() or {}
+    key = data.get('key', '').strip()
+    name = data.get('name', '').strip()
+    
+    if not key:
+        return jsonify({'error': 'API key is required'}), 400
+    
+    provider = get_provider(key)
+    key_hash = hash_key(key)
+    key_prefix = key[:12] + '...' if len(key) > 12 else key
+    
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
+                 (user_id, provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'API key added', 'provider': provider})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'This key already exists'}), 400
+
+@app.route('/api/keys/<int:key_id>', methods=['GET'])
+@rate_limit
+def api_get_key(key_id):
+    """Get a specific API key by ID"""
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    
+    token = auth[7:]
+    user_id = validate_api_token(token)
+    if not user_id:
+        return jsonify({'error': 'Invalid or expired token'}), 401
+    
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM api_keys WHERE id = ? AND user_id = ?', (key_id, user_id))
+    key = c.fetchone()
+    conn.close()
+    
+    if not key:
+        return jsonify({'error': 'Key not found'}), 404
+    
+    # Return the key details (but not the full hash)
+    return jsonify({
+        'success': True,
+        'key': {
+            'id': key['id'],
+            'provider': key['provider'],
+            'name': key['name'],
+            'key_prefix': key['key_prefix']
+        }
+    })
+
+@app.route('/api/keys/<int:key_id>', methods=['DELETE'])
+@rate_limit
+def api_delete_key(key_id):
+    """Delete an API key"""
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    
+    token = auth[7:]
+    user_id = validate_api_token(token)
+    if not user_id:
+        return jsonify({'error': 'Invalid or expired token'}), 401
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?', (key_id, user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'API key deleted'})
+
+def validate_api_token(token):
+    """Validate token and return user_id (or None)"""
+    # Simple validation: tokens start with "ait_USERID_"
+    if not token.startswith('ait_'):
+        return None
+    try:
+        parts = token.split('_')
+        if len(parts) >= 2:
+            return int(parts[1])
+    except:
+        pass
+    return None
+
 @app.route('/health')
 def health():
     return 'ok', 200

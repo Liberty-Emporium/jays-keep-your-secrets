@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Upgrade - AI API Tracker{% endblock %}
+
+{% block extra_css %}
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+.plan-card {
+    background: rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    transition: transform 0.2s;
+}
+.plan-card:hover { transform: translateY(-8px); }
+.plan-card.featured {
+    border: 2px solid #e94560;
+    background: rgba(233, 69, 96, 0.2);
+}
+.plan-name { font-size: 1.5rem; margin-bottom: 0.5rem; }
+.plan-price { font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem; }
+.plan-price span { font-size: 1rem; opacity: 0.7; }
+.plan-features { list-style: none; padding: 0; margin: 1.5rem 0; text-align: left; }
+.plan-features li { padding: 0.5rem 0; opacity: 0.9; }
+.plan-features li:before { content: "✓ "; color: #e94560; }
+{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 2rem;">
+    <h1>🚀 Upgrade Your Plan</h1>
+    <p style="opacity: 0.7;">Choose the plan that works for you</p>
+</div>
+
+<div class="pricing-grid">
+    <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0<span>/month</span></div>
+        <ul class="plan-features">
+            <li>Up to 3 API keys</li>
+            <li>Basic provider support</li>
+            <li>Email support</li>
+        </ul>
+        <a href="/signup" class="btn btn-secondary" style="width: 100%;">Get Started</a>
+    </div>
+    
+    <div class="plan-card featured">
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">$9<span>/month</span></div>
+        <ul class="plan-features">
+            <li>Unlimited API keys</li>
+            <li>All providers</li>
+            <li>Priority support</li>
+            <li>API access</li>
+        </ul>
+        <a href="#" class="btn" style="width: 100%;">Coming Soon</a>
+    </div>
+    
+    <div class="plan-card">
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-price">$49<span>/month</span></div>
+        <ul class="plan-features">
+            <li>Everything in Pro</li>
+            <li>Custom branding</li>
+            <li>Dedicated support</li>
+            <li>SLA guarantee</li>
+        </ul>
+        <a href="#" class="btn btn-secondary" style="width: 100%;">Coming Soon</a>
+    </div>
+</div>
+
+<p style="text-align: center; margin-top: 2rem; opacity: 0.7;">
+    Questions? <a href="mailto:jay@libertyemporium.com" style="color: #e94560;">Contact us</a>
+</p>
+{% endblock %}

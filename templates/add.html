@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Add API Key{% endblock %}
+
+{% block extra_css %}
+.form-card {
+    background: rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 500px;
+    margin: 0 auto;
+    backdrop-filter: blur(10px);
+}
+.form-group { margin-bottom: 1.5rem; }
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+.form-group input {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 2px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.1);
+    color: white;
+    font-size: 1rem;
+}
+.form-group input:focus {
+    outline: none;
+    border-color: #e94560;
+}
+.form-group small {
+    display: block;
+    margin-top: 0.5rem;
+    opacity: 0.7;
+}
+.provider-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+.provider-option {
+    background: rgba(255,255,255,0.05);
+    padding: 0.75rem;
+    border-radius: 8px;
+    text-align: center;
+    opacity: 0.7;
+    transition: all 0.2s;
+}
+.provider-option:hover { opacity: 1; }
+{% endblock %}
+
+{% block content %}
+<div class="form-card">
+    <h2 style="margin-bottom: 1.5rem;">➕ Add New API Key</h2>
+    
+    <form method="POST">
+        <div class="form-group">
+            <label for="key">API Key</label>
+            <input type="text" id="key" name="key" placeholder="sk-ant-... or gsk_... or xai-..." required>
+            <small>Paste your full API key. It will be stored securely.</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="name">Name (optional)</label>
+            <input type="text" id="name" name="name" placeholder="e.g., Main Claude Key">
+            <small>Give it a memorable name</small>
+        </div>
+        
+        <div class="form-group">
+            <label>Detected Provider:</label>
+            <div class="provider-list">
+                {% for key, info in providers.items() %}
+                <div class="provider-option">{{ info.name }}</div>
+                {% endfor %}
+            </div>
+            <small style="margin-top: 0.5rem;">Provider is auto-detected from key prefix</small>
+        </div>
+        
+        <button type="submit" class="btn" style="width: 100%;">Save Key</button>
+        <a href="/" class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem; text-align: center;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

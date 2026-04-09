@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}AI API Keys{% endblock %}
+
+{% block extra_css %}
+.key-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+.key-card {
+    background: rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: transform 0.2s;
+}
+.key-card:hover { transform: translateY(-4px); }
+.provider-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+.provider-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+.key-preview {
+    font-family: monospace;
+    background: rgba(0,0,0,0.3);
+    padding: 0.5rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin: 0.75rem 0;
+    word-break: break-all;
+}
+.key-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    opacity: 0.7;
+}
+.empty-state p { margin-bottom: 1rem; }
+.stats {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+.stat {
+    text-align: center;
+}
+.stat-value { font-size: 2rem; font-weight: bold; }
+.stat-label { opacity: 0.7; font-size: 0.9rem; }
+{% endblock %}
+
+{% block content %}
+<div style="text-align: center;">
+    <a href="/add" class="btn">➕ Add New Key</a>
+</div>
+
+{% if keys %}
+<div class="stats">
+    <div class="stat">
+        <div class="stat-value">{{ keys|length }}</div>
+        <div class="stat-label">Total Keys</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value">{{ keys|length }}</div>
+        <div class="stat-label">Providers</div>
+    </div>
+</div>
+
+<div class="key-grid">
+    {% for key in keys %}
+    <div class="key-card">
+        <div class="provider-icon">
+            {% if key.provider == 'anthropic' %}🧠
+            {% elif key.provider == 'groq' %}⚡
+            {% elif key.provider == 'xai' %}🚀
+            {% elif key.provider == 'qwen' %}🐉
+            {% elif key.provider == 'openai' %}💬
+            {% else %}🔑{% endif %}
+        </div>
+        <div class="provider-name">{{ key.name or key.provider }}</div>
+        <div class="key-preview">{{ key.key_prefix }}</div>
+        <small style="opacity: 0.6;">Added: {{ key.created_at[:10] }}</small>
+        <div class="key-actions">
+            <a href="/delete/{{ key.id }}" class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" onclick="return confirm('Delete this key?')">🗑️ Delete</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>No API keys yet!</p>
+    <a href="/add" class="btn">Add Your First Key</a>
+</div>
+{% endif %}
+{% endblock %}

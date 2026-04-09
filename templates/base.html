@@ -63,6 +63,12 @@
             {% endif %}
         {% endwith %}
         
+        {% if session.get('logged_in') %}
+        <div style="text-align: right; margin-bottom: 1rem;">
+            <a href="/logout" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">🚪 Logout</a>
+        </div>
+        {% endif %}
+        
         {% block content %}{% endblock %}
     </div>
 </body>

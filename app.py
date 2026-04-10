@@ -674,3 +674,10 @@ def key_status():
         })
     
     return jsonify({'success': True, 'keys': status_list})
+
+
+@app.route('/settings')
+@login_required
+def settings():
+    """Settings page"""
+    return render_template('settings.html')

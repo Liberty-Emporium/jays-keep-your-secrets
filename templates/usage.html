@@ -5,8 +5,18 @@
 {% block content %}
 <h2><i class="bi bi-graph-up"></i> API Usage & Costs</h2>
 
+<!-- Security Status -->
+<div class="row mt-3">
+    <div class="col-md-12">
+        <div class="alert alert-success">
+            <i class="bi bi-shield-check"></i> <strong>Encryption Status:</strong> All API keys are encrypted with AES-256 encryption
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
 <div class="row mt-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-primary text-white">
             <div class="card-body text-center">
                 <h1>{{ total_calls|default(0) }}</h1>
@@ -14,7 +24,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-success text-white">
             <div class="card-body text-center">
                 <h1>${{ "%.2f"|format(total_cost|default(0)) }}</h1>
@@ -22,7 +32,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-warning text-white">
             <div class="card-body text-center">
                 <h1>{{ keys|length }}</h1>
@@ -30,22 +40,33 @@
             </div>
         </div>
     </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h1><i class="bi bi-shield-lock"></i></h1>
+                <p>Encrypted</p>
+            </div>
+        </div>
+    </div>
 </div>
 
+<!-- Usage Table -->
 <div class="card mt-4">
-    <div class="card-header">
-        <h4>Usage by Provider</h4>
+    <div class="card-header bg-dark text-white">
+        <h4><i class="bi bi-list"></i> Usage by Provider</h4>
     </div>
     <div class="card-body">
         {% if usage_data %}
-        <table class="table table-striped">
-            <thead class="table-dark">
+        <div class="table-responsive">
+        <table class="table table-hover table-striped">
+            <thead class="table-primary">
                 <tr>
-                    <th>Provider</th>
-                    <th>Name</th>
-                    <th>API Calls</th>
-                    <th>Est. Cost</th>
-                    <th>Last Used</th>
+                    <th><i class="bi bi-cloud"></i> Provider</th>
+                    <th><i class="bi bi-tag"></i> Name</th>
+                    <th><i class="bi bi-hash"></i> API Calls</th>
+                    <th><i class="bi bi-cash"></i> Est. Cost</th>
+                    <th><i class="bi bi-clock"></i> Last Used</th>
+                    <th><i class="bi bi-shield"></i> Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -54,15 +75,17 @@
                     <td><span class="badge bg-info">{{ u.provider|upper }}</span></td>
                     <td><strong>{{ u.name }}</strong></td>
                     <td>{{ u.calls|default(0) }}</td>
-                    <td class="text-success">${{ "%.2f"|format(u.cost|default(0)) }}</td>
+                    <td class="text-success fw-bold">${{ "%.2f"|format(u.cost|default(0)) }}</td>
                     <td>{{ u.last_used }}</td>
+                    <td><span class="badge bg-success">Encrypted</span></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}
-        <div class="alert alert-info">
-            <h4>No usage data yet!</h4>
+        <div class="alert alert-info text-center">
+            <h4>📭 No usage data yet!</h4>
             <p>Add some API keys to start tracking your usage.</p>
             <a href="/add" class="btn btn-primary">Add API Key</a>
         </div>
@@ -70,17 +93,58 @@
     </div>
 </div>
 
-<div class="card mt-4 border-info">
-    <div class="card-header bg-info text-white">
-        <h5>Tips to Reduce Costs</h5>
+<!-- Security Info -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card border-success">
+            <div class="card-header bg-success text-white">
+                <h5><i class="bi bi-shield-lock"></i> Encryption Details</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>Encryption Type</strong></td>
+                        <td>AES-256</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Hash Algorithm</strong></td>
+                        <td>SHA-256</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Key Storage</strong></td>
+                        <td>Local & Encrypted</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Data Location</strong></td>
+                        <td>Your Server Only</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
     </div>
-    <div class="card-body">
-        <ul>
-            <li>Use smaller models when possible</li>
-            <li>Cache responses to avoid repeated API calls</li>
-            <li>Monitor your usage daily</li>
-            <li>Set up alerts when usage exceeds thresholds</li>
-        </ul>
+    <div class="col-md-6">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h5><i class="bi bi-lightbulb"></i> Cost Savings Tips</h5>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Use Qwen instead of Claude (cheaper)</li>
+                    <li>Use smaller models for simple tasks</li>
+                    <li>Cache common responses</li>
+                    <li>Monitor usage daily</li>
+                    <li>Set budget alerts</li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
+
+<!-- Quick Actions -->
+<div class="mt-4">
+    <a href="/add" class="btn btn-primary"><i class="bi bi-plus"></i> Add New Key</a>
+    <a href="/secrets" class="btn btn-success"><i class="bi bi-shield-lock"></i> Manage Secrets</a>
+    <a href="/ai-security" class="btn btn-info"><i class="bi bi-robot"></i> AI Security Tips</a>
+</div>
+
 {% endblock %}

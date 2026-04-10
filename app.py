@@ -14,7 +14,7 @@ ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 
 # Database
-DB_FILE = os.path.join(os.path.dirname(__file__), 'api_keys.db')
+DB_FILE = os.environ.get('DB_FILE', os.path.join('/data', 'api_keys.db'))
 
 def init_db():
     """Initialize the database."""
@@ -47,7 +47,12 @@ def init_db():
     
     conn.commit()
     
-    # Create demo user if demo mode
+    c.execute("SELECT id FROM users WHERE username = 'admin'")
+    if not c.fetchone():
+        c.execute("INSERT INTO users (username, email, password_hash, plan, is_admin) VALUES (?, ?, ?, ?, ?)",
+                 ('admin', 'jay@libertyemporium.com', hashlib.sha256('admin123'.encode()).hexdigest(), 'pro', 1))
+        conn.commit()
+    # Create admin user (persists across deploys)
     if DEMO_MODE:
         c.execute("SELECT id FROM users WHERE username = 'demo'")
         if not c.fetchone():

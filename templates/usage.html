@@ -5,7 +5,6 @@
 {% block content %}
 <h2><i class="bi bi-graph-up"></i> API Usage & Costs</h2>
 
-<!-- Summary Cards -->
 <div class="row mt-4">
     <div class="col-md-4">
         <div class="card bg-primary text-white">
@@ -33,10 +32,9 @@
     </div>
 </div>
 
-<!-- Usage Table -->
 <div class="card mt-4">
     <div class="card-header">
-        <h4>📊 Usage by Provider</h4>
+        <h4>Usage by Provider</h4>
     </div>
     <div class="card-body">
         {% if usage_data %}
@@ -61,14 +59,6 @@
                 </tr>
                 {% endfor %}
             </tbody>
-            <tfoot class="table-success">
-                <tr>
-                    <th colspan="2">TOTAL</th>
-                    <th>{{ total_calls|default(0) }}</th>
-                    <th>${{ "%.2f"|format(total_cost|default(0)) }}</th>
-                    <th></th>
-                </tr>
-            </tfoot>
         </table>
         {% else %}
         <div class="alert alert-info">
@@ -80,14 +70,13 @@
     </div>
 </div>
 
-<!-- Tips -->
 <div class="card mt-4 border-info">
     <div class="card-header bg-info text-white">
-        <h5>💡 Tips to Reduce Costs</h5>
+        <h5>Tips to Reduce Costs</h5>
     </div>
     <div class="card-body">
         <ul>
-            <li>Use smaller models when possible (Qwen is cheaper than GPT-4)</li>
+            <li>Use smaller models when possible</li>
             <li>Cache responses to avoid repeated API calls</li>
             <li>Monitor your usage daily</li>
             <li>Set up alerts when usage exceeds thresholds</li>

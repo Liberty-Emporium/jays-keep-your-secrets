@@ -14,14 +14,9 @@ ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 
 # Database
-DB_FILE = os.environ.get('DB_FILE', os.path.join('/data', 'api_keys.db'))
+DB_FILE = os.path.join(os.path.dirname(__file__), 'api_keys.db')
 
 def init_db():
-    # Create data directory if it does not exist
-    import os
-    data_dir = os.path.dirname(DB_FILE)
-    if data_dir and not os.path.exists(data_dir):
-        os.makedirs(data_dir, exist_ok=True)
     
     # Initialize the database.
     conn = sqlite3.connect(DB_FILE)

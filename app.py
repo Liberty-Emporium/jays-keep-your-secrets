@@ -17,6 +17,11 @@ DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 DB_FILE = os.path.join(os.path.dirname(__file__), 'api_keys.db')
 
 def init_db():
+    # Ensure directory exists
+    import os
+    db_dir = os.path.dirname(DB_FILE)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
     
     # Initialize the database.
     conn = sqlite3.connect(DB_FILE)

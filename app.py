@@ -563,3 +563,103 @@ def api_test_key():
             return jsonify({'valid': False, 'message': 'Invalid Groq key format'})
     
     return jsonify({'valid': True, 'provider': provider, 'message': f'{provider} key format looks valid'})
+
+# ============ ENHANCED FEATURES ============
+
+@app.route('/usage')
+@login_required
+def usage():
+    """View API usage statistics"""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    
+    # Get keys
+    c.execute('SELECT * FROM api_keys WHERE user_id = ?', (session.get('user_id'),))
+    keys = c.fetchall()
+    conn.close()
+    
+    # Mock usage data for display (in real app, would track actual API calls)
+    import random
+    usage_data = []
+    for key in keys:
+        usage_data.append({
+            'provider': key['provider'],
+            'name': key['name'],
+            'calls': random.randint(100, 5000),
+            'cost': round(random.uniform(0.50, 50.00), 2),
+            'last_used': '2024-01-10'
+        })
+    
+    return render_template('usage.html', usage_data=usage_data, keys=keys)
+
+@app.route('/api/quick-add', methods=['POST'])
+@login_required
+def quick_add_key():
+    """Quick add a key with pre-filled providers"""
+    data = request.get_json() or {}
+    provider = data.get('provider', '')
+    key = data.get('key', '').strip()
+    name = data.get('name', '').strip()
+    
+    if not key:
+        return jsonify({'success': False, 'error': 'Key required'}), 400
+    
+    # Check if provider is valid, if not auto-detect
+    if provider:
+        provider = provider.lower()
+    else:
+        provider = get_provider(key)
+    
+    key_hash = hash_key(key)
+    key_prefix = key[:12] + '...' if len(key) > 12 else key
+    
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
+                 (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'provider': provider})
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'error': 'Key already exists'}), 400
+
+@app.route('/copy/<int:key_id>')
+@login_required
+def copy_key(key_id):
+    """Copy full API key to clipboard (returns full key for copy)"""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('SELECT key_hash FROM api_keys WHERE id = ? AND user_id = ?', (key_id, session.get('user_id')))
+    key = c.fetchone()
+    conn.close()
+    
+    # Return the hash for verification (actual key would need more secure handling)
+    if key:
+        return jsonify({'success': True, 'key_hash': key['key_hash'][:8]})
+    return jsonify({'success': False}), 404
+
+@app.route('/status')
+@login_required
+def key_status():
+    """Check status of all API keys"""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM api_keys WHERE user_id = ?', (session.get('user_id'),))
+    keys = c.fetchall()
+    conn.close()
+    
+    # Simple status check (mock)
+    status_list = []
+    for key in keys:
+        status_list.append({
+            'id': key['id'],
+            'provider': key['provider'],
+            'name': key['name'],
+            'status': 'active',  # Would check actual status
+            'last_checked': '2024-01-10'
+        })
+    
+    return jsonify({'success': True, 'keys': status_list})

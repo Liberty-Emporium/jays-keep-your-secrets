@@ -676,8 +676,33 @@ def key_status():
     return jsonify({'success': True, 'keys': status_list})
 
 
-@app.route('/settings')
+@app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
     """Settings page"""
+    if request.method == 'POST':
+        key = request.form.get('key', '').strip()
+        name = request.form.get('name', '').strip()
+        provider = request.form.get('provider', 'qwen')
+        
+        if not key:
+            flash('API key is required', 'error')
+            return redirect(url_for('settings'))
+        
+        key_hash = hash_key(key)
+        key_prefix = key[:12] + '...' if len(key) > 12 else key
+        
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
+                     (session.get('user_id'), provider, name or provider, key_hash, key_prefix))
+            conn.commit()
+            conn.close()
+            flash('API key added!', 'success')
+        except sqlite3.IntegrityError:
+            flash('This key already exists', 'error')
+        
+        return redirect(url_for('dashboard'))
+    
     return render_template('settings.html')

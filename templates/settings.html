@@ -6,23 +6,21 @@
 <h2>⚙️ API Settings</h2>
 
 <div style="display: flex; gap: 2rem; margin-top: 1.5rem;">
-    <!-- Sidebar -->
     <div style="width: 200px; flex-shrink: 0;">
         <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem;">
             <h3 style="margin-bottom: 1rem; font-size: 1rem;">📁 Categories</h3>
             <ul style="list-style: none; padding: 0;">
                 <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('ai')" style="color: #fff;">🤖 AI Keys</a></li>
+                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('oauth')" style="color: #fff;">🔐 Client ID + Secret</a></li>
                 <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('payment')" style="color: #fff;">💳 Payment</a></li>
                 <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('email')" style="color: #fff;">📧 Email</a></li>
-                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('storage')" style="color: #fff;">💾 Storage</a></li>
                 <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('other')" style="color: #fff;">📦 Other</a></li>
             </ul>
         </div>
     </div>
     
-    <!-- Main Content -->
     <div style="flex: 1;">
-        <!-- AI Keys Section -->
+        <!-- AI Keys -->
         <div id="ai-section" class="category-section">
             <h3>🤖 AI API Keys</h3>
             <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
@@ -31,24 +29,50 @@
                     <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
                     <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                         <option value="qwen">Qwen</option>
-                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="anthropic">Anthropic</option>
                         <option value="groq">Groq</option>
-                        <option value="xai">xAI (Grok)</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="mistral">Mistral</option>
+                        <option value="xai">xAI</option>
                     </select>
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
                     <input type="password" name="key" placeholder="sk-..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                 </div>
-                <button type="submit" class="btn">🔐 Add AI Key</button>
+                <button type="submit" class="btn">🔐 Add Key</button>
             </form>
         </div>
         
-        <!-- Payment Keys Section -->
+        <!-- OAuth / Client ID + Secret -->
+        <div id="oauth-section" class="category-section" style="display: none;">
+            <h3>🔐 Client ID + Secret</h3>
+            <p style="opacity: 0.7;">For Square, Stripe, Google OAuth, etc.</p>
+            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                <input type="hidden" name="category" value="oauth">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
+                    <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                        <option value="square">Square</option>
+                        <option value="stripe">Stripe</option>
+                        <option value="google">Google</option>
+                        <option value="github">GitHub</option>
+                        <option value="aws">AWS</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Client ID</label>
+                    <input type="text" name="client_id" placeholder="Enter client ID..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Client Secret</label>
+                    <input type="password" name="client_secret" placeholder="Enter client secret..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <button type="submit" class="btn">🔐 Add Credentials</button>
+            </form>
+        </div>
+        
+        <!-- Payment -->
         <div id="payment-section" class="category-section" style="display: none;">
-            <h3>💳 Payment API Keys</h3>
+            <h3>💳 Payment</h3>
             <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
                 <input type="hidden" name="category" value="payment">
                 <div style="margin-bottom: 1rem;">
@@ -60,16 +84,16 @@
                     </select>
                 </div>
                 <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem;">API Key / Access Token</label>
-                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                    <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
+                    <input type="password" name="key" required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                 </div>
-                <button type="submit" class="btn">🔐 Add Payment Key</button>
+                <button type="submit" class="btn">🔐 Add</button>
             </form>
         </div>
         
-        <!-- Email Keys Section -->
+        <!-- Email -->
         <div id="email-section" class="category-section" style="display: none;">
-            <h3>📧 Email API Keys</h3>
+            <h3>📧 Email</h3>
             <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
                 <input type="hidden" name="category" value="email">
                 <div style="margin-bottom: 1rem;">
@@ -77,52 +101,30 @@
                     <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                         <option value="sendgrid">SendGrid</option>
                         <option value="mailgun">Mailgun</option>
-                        <option value="smtp">SMTP</option>
                     </select>
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
-                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                    <input type="password" name="key" required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                 </div>
-                <button type="submit" class="btn">🔐 Add Email Key</button>
+                <button type="submit" class="btn">🔐 Add</button>
             </form>
         </div>
         
-        <!-- Storage Section -->
-        <div id="storage-section" class="category-section" style="display: none;">
-            <h3>💾 Storage API Keys</h3>
-            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
-                <input type="hidden" name="category" value="storage">
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
-                    <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
-                        <option value="aws">AWS</option>
-                        <option value="cloudflare">Cloudflare</option>
-                        <option value="backblaze">Backblaze</option>
-                    </select>
-                </div>
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
-                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
-                </div>
-                <button type="submit" class="btn">🔐 Add Storage Key</button>
-            </form>
-        </div>
-        
-        <!-- Other Section -->
+        <!-- Other -->
         <div id="other-section" class="category-section" style="display: none;">
-            <h3>📦 Other API Keys</h3>
+            <h3>📦 Other</h3>
             <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
                 <input type="hidden" name="category" value="other">
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem;">Name</label>
-                    <input type="text" name="provider" placeholder="My API" required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                    <input type="text" name="provider" required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                 </div>
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
-                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                    <input type="password" name="key" required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
                 </div>
-                <button type="submit" class="btn">🔐 Add Key</button>
+                <button type="submit" class="btn">🔐 Add</button>
             </form>
         </div>
     </div>

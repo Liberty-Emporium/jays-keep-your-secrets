@@ -698,30 +698,43 @@ def settings():
     """Settings page"""
     if request.method == 'POST':
         key = request.form.get('key', '').strip()
+        client_id = request.form.get('client_id', '').strip()
+        client_secret = request.form.get('client_secret', '').strip()
         name = request.form.get('name', '').strip()
         provider = request.form.get('provider', 'qwen')
         category = request.form.get('category', 'ai')
-        
-        if not key:
-            flash('API key is required', 'error')
-            return redirect(url_for('settings'))
-        
-        key_hash = hash_key(key)
-        key_prefix = key[:12] + '...' if len(key) > 12 else key
         
         # Save to system config (not visible to users)
         config = load_system_config()
         if 'api_keys' not in config:
             config['api_keys'] = []
         
-        # Add the key (mask the actual value)
-        config['api_keys'].append({
-            'provider': provider,
-            'name': name or provider,
-            'category': category,
-            'key_hash': key_hash[:8] + '...',
-            'added': datetime.datetime.now().isoformat()
-        })
+        # Handle OAuth (client_id + client_secret) or regular API key
+        if category == 'oauth':
+            if not client_id or not client_secret:
+                flash('Client ID and Secret are required', 'error')
+                return redirect(url_for('settings'))
+            secret_hash = hashlib.sha256(client_secret.encode()).hexdigest()[:8]
+            config['api_keys'].append({
+                'provider': provider,
+                'name': provider,
+                'category': 'oauth',
+                'client_id': client_id,
+                'client_secret_hash': secret_hash + '...',
+                'added': datetime.datetime.now().isoformat()
+            })
+        else:
+            if not key:
+                flash('API key is required', 'error')
+                return redirect(url_for('settings'))
+            key_hash = hash_key(key)
+            config['api_keys'].append({
+                'provider': provider,
+                'name': name or provider,
+                'category': category,
+                'key_hash': key_hash[:8] + '...',
+                'added': datetime.datetime.now().isoformat()
+            })
         save_system_config(config)
         
         flash('API key saved to system!', 'success')

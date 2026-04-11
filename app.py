@@ -700,6 +700,7 @@ def settings():
         key = request.form.get('key', '').strip()
         name = request.form.get('name', '').strip()
         provider = request.form.get('provider', 'qwen')
+        category = request.form.get('category', 'ai')
         
         if not key:
             flash('API key is required', 'error')
@@ -717,6 +718,7 @@ def settings():
         config['api_keys'].append({
             'provider': provider,
             'name': name or provider,
+            'category': category,
             'key_hash': key_hash[:8] + '...',
             'added': datetime.datetime.now().isoformat()
         })

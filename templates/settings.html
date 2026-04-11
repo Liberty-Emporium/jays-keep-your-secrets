@@ -5,45 +5,133 @@
 {% block content %}
 <h2>⚙️ API Settings</h2>
 
-<p style="opacity: 0.7; margin-bottom: 1.5rem;">Add your AI provider API keys below. These are encrypted and stored securely.</p>
-
-<form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px;">
-    <h3 style="margin-bottom: 1rem;">Add AI API Key</h3>
-    
-    <div style="margin-bottom: 1rem;">
-        <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
-        <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none; font-size: 1rem;">
-            <option value="qwen">Qwen (Alibaba)</option>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="groq">Groq</option>
-            <option value="xai">xAI (Grok)</option>
-            <option value="openai">OpenAI</option>
-            <option value="mistral">Mistral</option>
-        </select>
+<div style="display: flex; gap: 2rem; margin-top: 1.5rem;">
+    <!-- Sidebar -->
+    <div style="width: 200px; flex-shrink: 0;">
+        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1rem;">
+            <h3 style="margin-bottom: 1rem; font-size: 1rem;">📁 Categories</h3>
+            <ul style="list-style: none; padding: 0;">
+                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('ai')" style="color: #fff;">🤖 AI Keys</a></li>
+                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('payment')" style="color: #fff;">💳 Payment</a></li>
+                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('email')" style="color: #fff;">📧 Email</a></li>
+                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('storage')" style="color: #fff;">💾 Storage</a></li>
+                <li style="margin-bottom: 0.5rem;"><a href="#" onclick="showCategory('other')" style="color: #fff;">📦 Other</a></li>
+            </ul>
+        </div>
     </div>
     
-    <div style="margin-bottom: 1rem;">
-        <label style="display: block; margin-bottom: 0.5rem;">Name (optional)</label>
-        <input type="text" name="name" placeholder="My Qwen Key" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none; font-size: 1rem;">
+    <!-- Main Content -->
+    <div style="flex: 1;">
+        <!-- AI Keys Section -->
+        <div id="ai-section" class="category-section">
+            <h3>🤖 AI API Keys</h3>
+            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                <input type="hidden" name="category" value="ai">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
+                    <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                        <option value="qwen">Qwen</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="groq">Groq</option>
+                        <option value="xai">xAI (Grok)</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="mistral">Mistral</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
+                    <input type="password" name="key" placeholder="sk-..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <button type="submit" class="btn">🔐 Add AI Key</button>
+            </form>
+        </div>
+        
+        <!-- Payment Keys Section -->
+        <div id="payment-section" class="category-section" style="display: none;">
+            <h3>💳 Payment API Keys</h3>
+            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                <input type="hidden" name="category" value="payment">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
+                    <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                        <option value="square">Square</option>
+                        <option value="stripe">Stripe</option>
+                        <option value="paypal">PayPal</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">API Key / Access Token</label>
+                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <button type="submit" class="btn">🔐 Add Payment Key</button>
+            </form>
+        </div>
+        
+        <!-- Email Keys Section -->
+        <div id="email-section" class="category-section" style="display: none;">
+            <h3>📧 Email API Keys</h3>
+            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                <input type="hidden" name="category" value="email">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
+                    <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                        <option value="sendgrid">SendGrid</option>
+                        <option value="mailgun">Mailgun</option>
+                        <option value="smtp">SMTP</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
+                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <button type="submit" class="btn">🔐 Add Email Key</button>
+            </form>
+        </div>
+        
+        <!-- Storage Section -->
+        <div id="storage-section" class="category-section" style="display: none;">
+            <h3>💾 Storage API Keys</h3>
+            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                <input type="hidden" name="category" value="storage">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Provider</label>
+                    <select name="provider" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                        <option value="aws">AWS</option>
+                        <option value="cloudflare">Cloudflare</option>
+                        <option value="backblaze">Backblaze</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
+                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <button type="submit" class="btn">🔐 Add Storage Key</button>
+            </form>
+        </div>
+        
+        <!-- Other Section -->
+        <div id="other-section" class="category-section" style="display: none;">
+            <h3>📦 Other API Keys</h3>
+            <form method="POST" style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem;">
+                <input type="hidden" name="category" value="other">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">Name</label>
+                    <input type="text" name="provider" placeholder="My API" required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
+                    <input type="password" name="key" placeholder="Enter key..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none;">
+                </div>
+                <button type="submit" class="btn">🔐 Add Key</button>
+            </form>
+        </div>
     </div>
-    
-    <div style="margin-bottom: 1rem;">
-        <label style="display: block; margin-bottom: 0.5rem;">API Key</label>
-        <input type="password" name="key" placeholder="sk-..." required style="width: 100%; padding: 0.75rem; border-radius: 8px; border: none; font-size: 1rem;">
-    </div>
-    
-    <button type="submit" class="btn">🔐 Add Key</button>
-</form>
-
-<div style="margin-top: 2rem;">
-    <h3>Your API Keys</h3>
-    <p style="opacity: 0.7;">Go to <a href="/dashboard" style="color: #e94560;">/dashboard</a> to view your keys</p>
 </div>
 
-<div style="margin-top: 2rem;">
-    <h3>Quick Links</h3>
-    <ul style="list-style: none; padding: 0;">
-        <li style="margin-bottom: 0.5rem;"><a href="/change-password" style="color: #e94560;">Change Password</a></li>
-    </ul>
-</div>
+<script>
+function showCategory(cat) {
+    document.querySelectorAll('.category-section').forEach(el => el.style.display = 'none');
+    document.getElementById(cat + '-section').style.display = 'block';
+}
+</script>
 {% endblock %}

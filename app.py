@@ -1,5 +1,20 @@
 import os
 import sqlite3
+
+def load_system_config():
+    """Load system configuration (API keys, etc.)"""
+    import json
+    if os.path.exists(SYSTEM_CONFIG_FILE):
+        with open(SYSTEM_CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_system_config(config):
+    """Save system configuration"""
+    import json
+    with open(SYSTEM_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
 import hashlib
 import secrets
 import datetime
@@ -15,6 +30,7 @@ DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 
 # Database
 DB_FILE = os.path.join(os.path.dirname(__file__), 'api_keys.db')
+SYSTEM_CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
 
 def init_db():
     # Ensure directory exists
@@ -692,16 +708,21 @@ def settings():
         key_hash = hash_key(key)
         key_prefix = key[:12] + '...' if len(key) > 12 else key
         
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
-                     (session.get('user_id'), provider, name or provider, key_hash, key_prefix))
-            conn.commit()
-            conn.close()
-            flash('API key added!', 'success')
-        except sqlite3.IntegrityError:
-            flash('This key already exists', 'error')
+        # Save to system config (not visible to users)
+        config = load_system_config()
+        if 'api_keys' not in config:
+            config['api_keys'] = []
+        
+        # Add the key (mask the actual value)
+        config['api_keys'].append({
+            'provider': provider,
+            'name': name or provider,
+            'key_hash': key_hash[:8] + '...',
+            'added': datetime.datetime.now().isoformat()
+        })
+        save_system_config(config)
+        
+        flash('API key saved to system!', 'success')
         
         return redirect(url_for('dashboard'))
     

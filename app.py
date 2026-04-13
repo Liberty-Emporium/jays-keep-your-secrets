@@ -313,16 +313,22 @@ def change_password():
             return redirect(url_for('change_password'))
         
         conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT password_hash FROM users WHERE id = ?', (session.get('user_id'),))
         user = c.fetchone()
-        
+
+        if not user:
+            flash('User not found. Please log in again.', 'error')
+            conn.close()
+            return redirect(url_for('logout'))
+
         if user['password_hash'] != hashlib.sha256(current.encode()).hexdigest():
             flash('Current password is incorrect', 'error')
             conn.close()
             return redirect(url_for('change_password'))
-        
-        c.execute('UPDATE users SET password_hash = ? WHERE id = ?', 
+
+        c.execute('UPDATE users SET password_hash = ? WHERE id = ?',
                  (hashlib.sha256(new_pass.encode()).hexdigest(), session.get('user_id')))
         conn.commit()
         conn.close()

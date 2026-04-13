@@ -344,6 +344,177 @@ def upgrade():
     """Upgrade page - placeholder for paid plans."""
     return render_template('upgrade.html')
 
+# ============ SMTP HELPER ============
+
+def get_smtp_config():
+    """Load SMTP settings from env vars."""
+    return {
+        'host':     os.environ.get('SMTP_HOST', ''),
+        'port':     int(os.environ.get('SMTP_PORT', 587)),
+        'user':     os.environ.get('SMTP_USER', ''),
+        'password': os.environ.get('SMTP_PASSWORD', ''),
+        'from':     os.environ.get('SMTP_FROM', os.environ.get('SMTP_USER', '')),
+    }
+
+def send_email(to, subject, body):
+    """Send plain-text email. Returns (True, '') or (False, error)."""
+    cfg = get_smtp_config()
+    if not cfg['host'] or not cfg['user'] or not cfg['password']:
+        return False, 'SMTP not configured (set SMTP_HOST, SMTP_USER, SMTP_PASSWORD env vars)'
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        msg = MIMEText(body, 'plain', 'utf-8')
+        msg['Subject'] = subject
+        msg['From']    = cfg['from']
+        msg['To']      = to
+        if cfg['port'] == 465:
+            with smtplib.SMTP_SSL(cfg['host'], 465, timeout=15) as s:
+                s.login(cfg['user'], cfg['password'])
+                s.sendmail(cfg['from'], [to], msg.as_string())
+        else:
+            with smtplib.SMTP(cfg['host'], cfg['port'], timeout=15) as s:
+                s.ehlo(); s.starttls()
+                s.login(cfg['user'], cfg['password'])
+                s.sendmail(cfg['from'], [to], msg.as_string())
+        return True, ''
+    except Exception as e:
+        return False, str(e)
+
+# ============ FORGOT PASSWORD ============
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+@rate_limit
+def forgot_password():
+    sent = False
+    error = None
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT id, username, email FROM users WHERE email = ?', (email,))
+        user = c.fetchone()
+
+        if user:
+            # Generate reset token valid for 1 hour
+            token = secrets.token_urlsafe(32)
+            expires = (datetime.datetime.utcnow() + datetime.timedelta(hours=1)).isoformat()
+            # Store in DB
+            c.execute('''CREATE TABLE IF NOT EXISTS password_resets (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL
+            )''')
+            c.execute('DELETE FROM password_resets WHERE user_id = ?', (user['id'],))
+            c.execute('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)',
+                      (token, user['id'], expires))
+            conn.commit()
+
+            reset_url = request.host_url.rstrip('/') + f'/reset-password/{token}'
+            ok, err = send_email(
+                to=user['email'],
+                subject='Andy — Reset Your Password',
+                body=(
+                    f"Hi {user['username']},\n\n"
+                    f"You requested a password reset for Andy - Keep Your Secrets Secret.\n\n"
+                    f"Click this link to set a new password (valid for 1 hour):\n"
+                    f"{reset_url}\n\n"
+                    f"If you didn't request this, ignore this email.\n\n"
+                    f"— Andy"
+                )
+            )
+            if ok:
+                sent = True
+            else:
+                # Still show sent to prevent email enumeration
+                sent = True
+                print(f'[EMAIL] Failed to send reset to {email}: {err}', flush=True)
+        else:
+            # Show success anyway (don't reveal if email exists)
+            sent = True
+
+        conn.close()
+    return render_template('forgot_password.html', sent=sent, error=error)
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+@rate_limit
+def reset_password(token):
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Check token exists and isn't expired
+    try:
+        c.execute('SELECT * FROM password_resets WHERE token = ?', (token,))
+        record = c.fetchone()
+    except Exception:
+        record = None
+
+    if not record:
+        conn.close()
+        flash('Invalid or expired reset link. Please request a new one.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    expires_at = datetime.datetime.fromisoformat(record['expires_at'])
+    if datetime.datetime.utcnow() > expires_at:
+        c.execute('DELETE FROM password_resets WHERE token = ?', (token,))
+        conn.commit()
+        conn.close()
+        flash('This reset link has expired. Please request a new one.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    error = None
+    if request.method == 'POST':
+        new_pass = request.form.get('new_password', '')
+        confirm  = request.form.get('confirm_password', '')
+        if len(new_pass) < 6:
+            error = 'Password must be at least 6 characters.'
+        elif new_pass != confirm:
+            error = 'Passwords do not match.'
+        else:
+            c.execute('UPDATE users SET password_hash = ? WHERE id = ?',
+                      (hashlib.sha256(new_pass.encode()).hexdigest(), record['user_id']))
+            c.execute('DELETE FROM password_resets WHERE token = ?', (token,))
+            conn.commit()
+            conn.close()
+            flash('Password reset! You can now log in.', 'success')
+            return redirect(url_for('login'))
+
+    conn.close()
+    return render_template('reset_password.html', token=token, error=error)
+
+
+# ============ FORGOT USERNAME ============
+
+@app.route('/forgot-username', methods=['GET', 'POST'])
+@rate_limit
+def forgot_username():
+    sent = False
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute('SELECT username FROM users WHERE email = ?', (email,))
+        user = c.fetchone()
+        conn.close()
+        if user:
+            send_email(
+                to=email,
+                subject='Andy — Your Username',
+                body=(
+                    f"Hi,\n\n"
+                    f"Your Andy - Keep Your Secrets Secret username is: {user['username']}\n\n"
+                    f"You can log in at: {request.host_url}login\n\n"
+                    f"— Andy"
+                )
+            )
+        # Always show sent (don't reveal if email exists)
+        sent = True
+    return render_template('forgot_username.html', sent=sent)
+
 # ============ API FOR BOTS ============
 # Generate tokens for bot access
 @app.route('/api/token', methods=['POST'])

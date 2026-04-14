@@ -798,6 +798,45 @@ def _log_req(response):
     return response
 
 
+
+# ============================================================
+# SEO — Sitemap + Robots.txt
+# ============================================================
+@app.route('/sitemap.xml')
+def sitemap():
+    """Auto-generated XML sitemap for SEO."""
+    host = request.host_url.rstrip('/')
+    urls = [
+        {'loc': f"{host}/",          'priority': '1.0', 'changefreq': 'weekly'},
+        {'loc': f"{host}/login",     'priority': '0.8', 'changefreq': 'monthly'},
+        {'loc': f"{host}/signup",    'priority': '0.9', 'changefreq': 'monthly'},
+        {'loc': f"{host}/pricing",   'priority': '0.8', 'changefreq': 'monthly'},
+    ]
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>',
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        xml.append(f"  <url>")
+        xml.append(f"    <loc>{u['loc']}</loc>")
+        xml.append(f"    <changefreq>{u['changefreq']}</changefreq>")
+        xml.append(f"    <priority>{u['priority']}</priority>")
+        xml.append(f"  </url>")
+    xml.append('</urlset>')
+    return '\n'.join(xml), 200, {'Content-Type': 'application/xml'}
+
+@app.route('/robots.txt')
+def robots():
+    """robots.txt for search engine crawling guidance."""
+    host = request.host_url.rstrip('/')
+    content = f"""User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /overseer
+Disallow: /api/
+Sitemap: {host}/sitemap.xml
+"""
+    return content, 200, {'Content-Type': 'text/plain'}
+
+
 # GLOBAL ERROR HANDLERS
 # ============================================================
 @app.errorhandler(404)

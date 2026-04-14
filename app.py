@@ -44,7 +44,7 @@ SYSTEM_CONFIG_FILE = os.path.join(_DATA_DIR, 'config.json')
 
 def get_db():
     """Get database connection with WAL mode enabled."""
-    conn = get_db()
+    conn = sqlite3.connect(DB_FILE)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")

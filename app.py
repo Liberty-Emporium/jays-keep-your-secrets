@@ -750,6 +750,54 @@ def health():
 
 
 # ============================================================
+
+# ============================================================
+# STRUCTURED LOGGING + METRICS
+# ============================================================
+import logging as _log, time as _t
+
+_log_handler = _log.StreamHandler()
+_log_handler.setFormatter(_log.Formatter('%(asctime)s %(levelname)s %(message)s'))
+app.logger.addHandler(_log_handler)
+app.logger.setLevel(_log.INFO)
+
+def _ensure_metrics():
+    try:
+        db = get_db()
+        db.execute("""CREATE TABLE IF NOT EXISTS metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            metric TEXT NOT NULL, value REAL DEFAULT 1,
+            tenant_slug TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        db.commit()
+    except Exception:
+        pass
+
+def track(metric, value=1, slug=None):
+    try:
+        _ensure_metrics()
+        get_db().execute(
+            "INSERT INTO metrics (metric,value,tenant_slug) VALUES (?,?,?)",
+            (metric, value, slug))
+        get_db().commit()
+    except Exception:
+        pass
+
+@app.before_request
+def _start_timer():
+    from flask import g
+    g._start = _t.time()
+
+@app.after_request
+def _log_req(response):
+    from flask import g
+    if not request.path.startswith('/static'):
+        ms = (_t.time() - getattr(g, '_start', _t.time())) * 1000
+        if ms > 800:
+            app.logger.warning(f"SLOW {request.method} {request.path} {response.status_code} {ms:.0f}ms")
+    return response
+
+
 # GLOBAL ERROR HANDLERS
 # ============================================================
 @app.errorhandler(404)

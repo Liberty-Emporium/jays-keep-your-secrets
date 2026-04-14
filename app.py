@@ -42,6 +42,16 @@ except Exception:
 DB_FILE = os.path.join(_DATA_DIR, 'api_keys.db')
 SYSTEM_CONFIG_FILE = os.path.join(_DATA_DIR, 'config.json')
 
+def get_db():
+    """Get database connection with WAL mode enabled."""
+    conn = get_db()
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def init_db():
     # Ensure directory exists
     import os
@@ -50,7 +60,7 @@ def init_db():
         os.makedirs(db_dir, exist_ok=True)
     
     # Initialize the database.
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     c = conn.cursor()
     
     # Users table
@@ -184,7 +194,7 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT * FROM users WHERE username = ?', (username,))
@@ -223,7 +233,7 @@ def signup():
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         
         try:
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db()
             c = conn.cursor()
             c.execute('INSERT INTO users (username, email, password_hash, plan) VALUES (?, ?, ?, ?)',
                      (username, email, password_hash, 'free'))
@@ -251,7 +261,7 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC', (session.get('user_id'),))
@@ -280,7 +290,7 @@ def add_key():
         key_prefix = key[:12] + '...' if len(key) > 12 else key
         
         try:
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_db()
             c = conn.cursor()
             c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
                      (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
@@ -298,7 +308,7 @@ def add_key():
 @login_required
 @rate_limit
 def delete_key(key_id):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     c = conn.cursor()
     c.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?', (key_id, session.get('user_id')))
     conn.commit()
@@ -322,7 +332,7 @@ def change_password():
             flash('Password must be at least 6 characters', 'error')
             return redirect(url_for('change_password'))
         
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT password_hash FROM users WHERE id = ?', (session.get('user_id'),))
@@ -400,7 +410,7 @@ def forgot_password():
     error = None
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT id, username, email FROM users WHERE email = ?', (email,))
@@ -451,7 +461,7 @@ def forgot_password():
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 @rate_limit
 def reset_password(token):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -504,7 +514,7 @@ def forgot_username():
     sent = False
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT username FROM users WHERE email = ?', (email,))
@@ -538,7 +548,7 @@ def api_create_token():
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM users WHERE username = ?', (username,))
@@ -575,7 +585,7 @@ def api_list_keys():
     if not user_id:
         return jsonify({'error': 'Invalid or expired token'}), 401
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT id, provider, name, key_prefix, created_at FROM api_keys WHERE user_id = ?', (user_id,))
@@ -612,7 +622,7 @@ def api_add_key():
     key_prefix = key[:12] + '...' if len(key) > 12 else key
     
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         c = conn.cursor()
         c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
                  (user_id, provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
@@ -635,7 +645,7 @@ def api_get_key(key_id):
     if not user_id:
         return jsonify({'error': 'Invalid or expired token'}), 401
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM api_keys WHERE id = ? AND user_id = ?', (key_id, user_id))
@@ -669,7 +679,7 @@ def api_delete_key(key_id):
     if not user_id:
         return jsonify({'error': 'Invalid or expired token'}), 401
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     c = conn.cursor()
     c.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?', (key_id, user_id))
     conn.commit()
@@ -705,7 +715,7 @@ def test_provider(provider):
     """Test if an API key for the given provider works"""
     import requests
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM api_keys WHERE user_id = ? AND provider = ?', (session.get('user_id'), provider))
@@ -784,7 +794,7 @@ def api_test_key():
 @login_required
 def usage():
     """View API usage statistics"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
@@ -829,7 +839,7 @@ def quick_add_key():
     key_prefix = key[:12] + '...' if len(key) > 12 else key
     
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         c = conn.cursor()
         c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
                  (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
@@ -843,7 +853,7 @@ def quick_add_key():
 @login_required
 def copy_key(key_id):
     """Copy full API key to clipboard (returns full key for copy)"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     c = conn.cursor()
     c.execute('SELECT key_hash FROM api_keys WHERE id = ? AND user_id = ?', (key_id, session.get('user_id')))
     key = c.fetchone()
@@ -858,7 +868,7 @@ def copy_key(key_id):
 @login_required
 def key_status():
     """Check status of all API keys"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM api_keys WHERE user_id = ?', (session.get('user_id'),))
@@ -946,7 +956,7 @@ def overseer_login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db()
         conn.row_factory = sqlite3.Row
         user = conn.execute('SELECT * FROM users WHERE username=? AND is_admin=1', (username,)).fetchone()
         conn.close()
@@ -965,7 +975,7 @@ def overseer_logout():
 @app.route('/overseer')
 @admin_required
 def overseer():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     users = conn.execute('SELECT *, (SELECT COUNT(*) FROM api_keys WHERE user_id=users.id) as key_count FROM users ORDER BY created_at DESC').fetchall()
     conn.close()
@@ -978,7 +988,7 @@ def overseer():
 @app.route('/overseer/user/<int:user_id>/upgrade', methods=['POST'])
 @admin_required
 def overseer_upgrade(user_id):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.execute("UPDATE users SET plan='pro' WHERE id=?", (user_id,))
     conn.commit(); conn.close()
     flash('User upgraded to Pro.', 'success')
@@ -987,7 +997,7 @@ def overseer_upgrade(user_id):
 @app.route('/overseer/user/<int:user_id>/downgrade', methods=['POST'])
 @admin_required
 def overseer_downgrade(user_id):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.execute("UPDATE users SET plan='free' WHERE id=?", (user_id,))
     conn.commit(); conn.close()
     flash('User downgraded to Free.', 'success')
@@ -996,7 +1006,7 @@ def overseer_downgrade(user_id):
 @app.route('/overseer/user/<int:user_id>/delete', methods=['POST'])
 @admin_required
 def overseer_delete_user(user_id):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db()
     conn.execute('DELETE FROM api_keys WHERE user_id=?', (user_id,))
     conn.execute('DELETE FROM users WHERE id=?', (user_id,))
     conn.commit(); conn.close()

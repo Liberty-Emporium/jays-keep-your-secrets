@@ -28,9 +28,19 @@ app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 
-# Database
-DB_FILE = os.path.join(os.path.dirname(__file__), 'api_keys.db')
-SYSTEM_CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
+# Database — use /data volume if available, fallback to local
+_data_pref = os.environ.get('DATA_DIR', '/data')
+try:
+    os.makedirs(_data_pref, exist_ok=True)
+    _t = os.path.join(_data_pref, '.write_test')
+    open(_t,'w').close(); os.remove(_t)
+    _DATA_DIR = _data_pref
+except Exception:
+    _DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
+DB_FILE = os.path.join(_DATA_DIR, 'api_keys.db')
+SYSTEM_CONFIG_FILE = os.path.join(_DATA_DIR, 'config.json')
 
 def init_db():
     # Ensure directory exists
@@ -919,3 +929,76 @@ def settings():
         return redirect(url_for('dashboard'))
     
     return render_template('settings.html')
+
+# ==================== OVERSEER (ADMIN PANEL) ====================
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('is_admin'):
+            flash('Admin access required.', 'error')
+            return redirect(url_for('overseer_login'))
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/overseer/login', methods=['GET', 'POST'])
+def overseer_login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        user = conn.execute('SELECT * FROM users WHERE username=? AND is_admin=1', (username,)).fetchone()
+        conn.close()
+        if user and user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
+            session['is_admin'] = True
+            session['admin_user'] = username
+            return redirect(url_for('overseer'))
+        flash('Invalid admin credentials.', 'error')
+    return render_template('overseer_login.html')
+
+@app.route('/overseer/logout')
+def overseer_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('index'))
+
+@app.route('/overseer')
+@admin_required
+def overseer():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    users = conn.execute('SELECT *, (SELECT COUNT(*) FROM api_keys WHERE user_id=users.id) as key_count FROM users ORDER BY created_at DESC').fetchall()
+    conn.close()
+    total = len(users)
+    paid  = sum(1 for u in users if u['plan'] in ('pro','enterprise'))
+    mrr   = paid * 14.99
+    return render_template('overseer.html', users=users, total=total, paid=paid,
+                           free=total-paid, mrr=mrr)
+
+@app.route('/overseer/user/<int:user_id>/upgrade', methods=['POST'])
+@admin_required
+def overseer_upgrade(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("UPDATE users SET plan='pro' WHERE id=?", (user_id,))
+    conn.commit(); conn.close()
+    flash('User upgraded to Pro.', 'success')
+    return redirect(url_for('overseer'))
+
+@app.route('/overseer/user/<int:user_id>/downgrade', methods=['POST'])
+@admin_required
+def overseer_downgrade(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("UPDATE users SET plan='free' WHERE id=?", (user_id,))
+    conn.commit(); conn.close()
+    flash('User downgraded to Free.', 'success')
+    return redirect(url_for('overseer'))
+
+@app.route('/overseer/user/<int:user_id>/delete', methods=['POST'])
+@admin_required
+def overseer_delete_user(user_id):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute('DELETE FROM api_keys WHERE user_id=?', (user_id,))
+    conn.execute('DELETE FROM users WHERE id=?', (user_id,))
+    conn.commit(); conn.close()
+    flash('User deleted.', 'success')
+    return redirect(url_for('overseer'))

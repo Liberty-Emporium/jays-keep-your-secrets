@@ -424,14 +424,14 @@ def forgot_password():
             reset_url = request.host_url.rstrip('/') + f'/reset-password/{token}'
             ok, err = send_email(
                 to=user['email'],
-                subject='Andy — Reset Your Password',
+                subject='Jay — Reset Your Password',
                 body=(
                     f"Hi {user['username']},\n\n"
-                    f"You requested a password reset for Andy - Keep Your Secrets Secret.\n\n"
+                    f"You requested a password reset for Jay's Keep Your Secrets.\n\n"
                     f"Click this link to set a new password (valid for 1 hour):\n"
                     f"{reset_url}\n\n"
                     f"If you didn't request this, ignore this email.\n\n"
-                    f"— Andy"
+                    f"— Jay"
                 )
             )
             if ok:
@@ -513,12 +513,12 @@ def forgot_username():
         if user:
             send_email(
                 to=email,
-                subject='Andy — Your Username',
+                subject='Jay — Your Username',
                 body=(
                     f"Hi,\n\n"
-                    f"Your Andy - Keep Your Secrets Secret username is: {user['username']}\n\n"
+                    f"Your Jay's Keep Your Secrets username is: {user['username']}\n\n"
                     f"You can log in at: {request.host_url}login\n\n"
-                    f"— Andy"
+                    f"— Jay"
                 )
             )
         # Always show sent (don't reveal if email exists)

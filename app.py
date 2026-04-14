@@ -21,7 +21,46 @@ import datetime
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, g
 
+# ============================================================
+# RATE LIMITER — No external dependencies required
+# ============================================================
+import time as _rl_time
+
+def _is_rate_limited(db, key, max_calls=5, window_seconds=60):
+    """Returns True if this key has exceeded the rate limit."""
+    try:
+        db.execute("""CREATE TABLE IF NOT EXISTS rate_limits (
+            key TEXT NOT NULL, window_start INTEGER NOT NULL,
+            count INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (key, window_start))""")
+        db.execute("DELETE FROM rate_limits WHERE window_start < ?",
+                   (int(_rl_time.time()) - window_seconds * 2,))
+        now = int(_rl_time.time())
+        ws = now - (now % window_seconds)
+        row = db.execute(
+            "SELECT count FROM rate_limits WHERE key=? AND window_start=?",
+            (key, ws)).fetchone()
+        if row is None:
+            db.execute("INSERT OR IGNORE INTO rate_limits VALUES (?,?,1)", (key, ws))
+            db.commit()
+            return False
+        if row[0] >= max_calls:
+            return True
+        db.execute("UPDATE rate_limits SET count=count+1 WHERE key=? AND window_start=?",
+                   (key, ws))
+        db.commit()
+        return False
+    except Exception:
+        return False
+
+
 app = Flask(__name__)
+
+    # Session security hardening
+    app.config['SESSION_COOKIE_SECURE'] = False  # Set True when HTTPS confirmed
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 # Config
@@ -190,6 +229,11 @@ def demo():
 @app.route('/login', methods=['GET', 'POST'])
 @rate_limit
 def login():
+    # Rate limiting — 10 login attempts per minute per IP
+    _ip = request.remote_addr or 'unknown'
+    if _is_rate_limited(get_db(), f'login:{_ip}', max_calls=10, window_seconds=60):
+        return jsonify({'error': 'Too many login attempts. Please wait 1 minute.'}), 429
+
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
@@ -703,6 +747,29 @@ def validate_api_token(token):
 @app.route('/health')
 def health():
     return 'ok', 200
+
+
+# ============================================================
+# GLOBAL ERROR HANDLERS
+# ============================================================
+@app.errorhandler(404)
+def not_found_error(e):
+    if request.path.startswith('/api/'):
+        return __import__('flask').jsonify({'error': 'Not found'}), 404
+    return render_template('404.html') if os.path.exists(
+        os.path.join(app.template_folder or 'templates', '404.html')
+    ) else ('<h1>404 - Page Not Found</h1>', 404)
+
+@app.errorhandler(500)
+def internal_error(e):
+    app.logger.error(f"UNHANDLED_500: {str(e)}", exc_info=True)
+    if request.path.startswith('/api/'):
+        return __import__('flask').jsonify({'error': 'Internal server error'}), 500
+    return '<h1>500 - Something went wrong. We are looking into it.</h1>', 500
+
+@app.errorhandler(429)
+def rate_limit_error(e):
+    return __import__('flask').jsonify({'error': 'Too many requests. Please slow down.'}), 429
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

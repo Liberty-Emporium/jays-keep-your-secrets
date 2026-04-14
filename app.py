@@ -56,11 +56,11 @@ def _is_rate_limited(db, key, max_calls=5, window_seconds=60):
 
 app = Flask(__name__)
 
-    # Session security hardening
-    app.config['SESSION_COOKIE_SECURE'] = False  # Set True when HTTPS confirmed
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
+# Session security hardening
+app.config['SESSION_COOKIE_SECURE'] = False  # Set True when HTTPS confirmed
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 # Config

@@ -783,6 +783,27 @@ def health():
 # ============================================================
 import logging as _log, time as _t
 
+import bcrypt as _bcrypt_lib
+
+def _sha256_hash(pw):
+    import hashlib
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def _is_sha256_hash(h):
+    return isinstance(h, str) and len(h) == 64 and all(c in '0123456789abcdef' for c in h.lower())
+
+def _bcrypt_hash(pw):
+    return _bcrypt_lib.hashpw(pw.encode('utf-8'), _bcrypt_lib.gensalt()).decode('utf-8')
+
+def _bcrypt_verify(pw, stored):
+    if _is_sha256_hash(stored):
+        return _sha256_hash(pw) == stored, True  # valid, needs_upgrade
+    try:
+        return _bcrypt_lib.checkpw(pw.encode('utf-8'), stored.encode('utf-8')), False
+    except Exception:
+        return False, False
+
+
 _log_handler = _log.StreamHandler()
 _log_handler.setFormatter(_log.Formatter('%(asctime)s %(levelname)s %(message)s'))
 app.logger.addHandler(_log_handler)

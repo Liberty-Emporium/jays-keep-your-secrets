@@ -76,7 +76,24 @@ app.config['SESSION_COOKIE_SECURE'] = False  # Set True when HTTPS confirmed
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+def _get_secret_key():
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key:
+        return env_key
+    import pathlib
+    key_file = pathlib.Path('/data/secret_key')
+    try:
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        if key_file.exists():
+            k = key_file.read_text().strip()
+            if k: return k
+        k = secrets.token_hex(32)
+        key_file.write_text(k)
+        return k
+    except Exception:
+        return secrets.token_hex(32)
+
+app.secret_key = _get_secret_key()
 
 import secrets as _secrets_module
 

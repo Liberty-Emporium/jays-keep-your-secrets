@@ -152,6 +152,7 @@ async function generateToken() {
   try {
     const res = await fetch('/api/token/ui', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {'Content-Type':'application/json', 'X-CSRF-Token': '{{ csrf_token() }}'}
     });
     const data = await res.json();
@@ -175,6 +176,7 @@ async function revokeToken() {
   try {
     const res = await fetch('/api/token/ui', {
       method: 'DELETE',
+      credentials: 'same-origin',
       headers: {'Content-Type':'application/json', 'X-CSRF-Token': '{{ csrf_token() }}'}
     });
     const data = await res.json();

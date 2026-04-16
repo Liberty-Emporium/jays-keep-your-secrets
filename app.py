@@ -249,6 +249,19 @@ def init_db():
             c.execute("INSERT INTO users (username, email, password_hash, plan, is_admin) VALUES (?, ?, ?, ?, ?)",
                      ('demo', 'demo@demo.com', hashlib.sha256('demo123'.encode()).hexdigest(), 'demo', 0))
     
+    # Add new columns if they don't exist (safe migrations)
+    migrations = [
+        "ALTER TABLE users ADD COLUMN suspended INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN admin_note TEXT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN last_login TIMESTAMP",
+    ]
+    for sql in migrations:
+        try:
+            c.execute(sql)
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
     conn.commit()
     conn.close()
 
@@ -406,6 +419,10 @@ def login():
         conn.close()
         
         if user and _verify_password(password, user['password_hash']):
+            # Check if account is suspended
+            if user['suspended'] if 'suspended' in user.keys() else False:
+                flash('This account has been suspended. Contact support.', 'error')
+                return render_template('login.html', demo_mode=DEMO_MODE)
             # Auto-upgrade legacy sha256 hash to bcrypt on login
             if _needs_upgrade(user['password_hash']):
                 _ug = get_db()
@@ -421,6 +438,11 @@ def login():
             session['plan'] = user['plan']
             session['is_admin'] = bool(user['is_admin'])
             session['csrf_token'] = secrets.token_hex(32)
+            # Update last_login timestamp
+            _ll = get_db()
+            _ll.execute('UPDATE users SET last_login=? WHERE id=?',
+                        (datetime.datetime.utcnow().isoformat(), user['id']))
+            _ll.commit(); _ll.close()
             flash('Welcome back!', 'success')
             return redirect(url_for('dashboard'))
         else:
@@ -1486,22 +1508,43 @@ def overseer_logout():
 def overseer():
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    users = conn.execute('SELECT *, (SELECT COUNT(*) FROM api_keys WHERE user_id=users.id) as key_count FROM users ORDER BY created_at DESC').fetchall()
+    search = request.args.get('q', '').strip()
+    if search:
+        users = conn.execute(
+            '''SELECT *, (SELECT COUNT(*) FROM api_keys WHERE user_id=users.id) as key_count
+               FROM users WHERE username LIKE ? OR email LIKE ?
+               ORDER BY created_at DESC''',
+            (f'%{search}%', f'%{search}%')
+        ).fetchall()
+    else:
+        users = conn.execute(
+            'SELECT *, (SELECT COUNT(*) FROM api_keys WHERE user_id=users.id) as key_count FROM users ORDER BY created_at DESC'
+        ).fetchall()
+    # Revenue over last 30 days (signups)
+    signups_30d = conn.execute(
+        "SELECT COUNT(*) as c FROM users WHERE created_at >= date('now','-30 days')"
+    ).fetchone()['c']
     conn.close()
     total = len(users)
     paid  = sum(1 for u in users if u['plan'] in ('pro','enterprise'))
     mrr   = paid * 14.99
     return render_template('overseer.html', users=users, total=total, paid=paid,
-                           free=total-paid, mrr=mrr)
+                           free=total-paid, mrr=mrr, search=search,
+                           signups_30d=signups_30d)
+
 
 @app.route('/overseer/user/<int:user_id>/upgrade', methods=['POST'])
 @admin_required
 def overseer_upgrade(user_id):
+    plan = request.form.get('plan', 'pro')
+    if plan not in ('free','pro','enterprise','demo'):
+        plan = 'pro'
     conn = get_db()
-    conn.execute("UPDATE users SET plan='pro' WHERE id=?", (user_id,))
+    conn.execute('UPDATE users SET plan=? WHERE id=?', (plan, user_id))
     conn.commit(); conn.close()
-    flash('User upgraded to Pro.', 'success')
+    flash(f'User plan set to {plan}.', 'success')
     return redirect(url_for('overseer'))
+
 
 @app.route('/overseer/user/<int:user_id>/downgrade', methods=['POST'])
 @admin_required
@@ -1512,12 +1555,126 @@ def overseer_downgrade(user_id):
     flash('User downgraded to Free.', 'success')
     return redirect(url_for('overseer'))
 
+
 @app.route('/overseer/user/<int:user_id>/delete', methods=['POST'])
 @admin_required
 def overseer_delete_user(user_id):
     conn = get_db()
     conn.execute('DELETE FROM api_keys WHERE user_id=?', (user_id,))
+    conn.execute('DELETE FROM api_tokens WHERE user_id=?', (user_id,))
     conn.execute('DELETE FROM users WHERE id=?', (user_id,))
     conn.commit(); conn.close()
     flash('User deleted.', 'success')
+    return redirect(url_for('overseer'))
+
+
+@app.route('/overseer/user/<int:user_id>/suspend', methods=['POST'])
+@admin_required
+def overseer_suspend(user_id):
+    """Suspend a user — disables login without deleting."""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    user = conn.execute('SELECT suspended FROM users WHERE id=?', (user_id,)).fetchone()
+    # Add suspended column if not exists
+    try:
+        conn.execute('ALTER TABLE users ADD COLUMN suspended INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass
+    currently = user['suspended'] if user and 'suspended' in user.keys() else 0
+    new_val = 0 if currently else 1
+    conn.execute('UPDATE users SET suspended=? WHERE id=?', (new_val, user_id))
+    # Revoke all tokens if suspending
+    if new_val:
+        conn.execute('DELETE FROM api_tokens WHERE user_id=?', (user_id,))
+    conn.commit(); conn.close()
+    flash('User ' + ('suspended.' if new_val else 'reactivated.'), 'success')
+    return redirect(url_for('overseer'))
+
+
+@app.route('/overseer/user/<int:user_id>/reset-password', methods=['POST'])
+@admin_required
+def overseer_reset_password(user_id):
+    """Admin force-resets a user's password."""
+    new_pass = request.form.get('new_password', '').strip()
+    if not new_pass or len(new_pass) < 8:
+        flash('Password must be at least 8 characters.', 'error')
+        return redirect(url_for('overseer'))
+    conn = get_db()
+    conn.execute('UPDATE users SET password_hash=? WHERE id=?',
+                 (_hash_password(new_pass), user_id))
+    # Revoke all existing tokens (force re-login)
+    conn.execute('DELETE FROM api_tokens WHERE user_id=?', (user_id,))
+    conn.commit(); conn.close()
+    flash('Password reset and all tokens revoked.', 'success')
+    return redirect(url_for('overseer'))
+
+
+@app.route('/overseer/user/<int:user_id>/force-logout', methods=['POST'])
+@admin_required
+def overseer_force_logout(user_id):
+    """Revoke all API tokens for a user (forces re-login/re-auth)."""
+    conn = get_db()
+    conn.execute('DELETE FROM api_tokens WHERE user_id=?', (user_id,))
+    conn.commit(); conn.close()
+    flash('All sessions and tokens revoked for user.', 'success')
+    return redirect(url_for('overseer'))
+
+
+@app.route('/overseer/user/<int:user_id>/note', methods=['POST'])
+@admin_required
+def overseer_add_note(user_id):
+    """Add an admin note to a user."""
+    note = request.form.get('note', '').strip()[:500]
+    conn = get_db()
+    try:
+        conn.execute('ALTER TABLE users ADD COLUMN admin_note TEXT DEFAULT NULL')
+        conn.commit()
+    except Exception:
+        pass
+    conn.execute('UPDATE users SET admin_note=? WHERE id=?', (note, user_id))
+    conn.commit(); conn.close()
+    flash('Note saved.', 'success')
+    return redirect(url_for('overseer'))
+
+
+@app.route('/overseer/user/<int:user_id>/keys')
+@admin_required
+def overseer_view_keys(user_id):
+    """View a user's API keys (prefixes only, not full keys)."""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    user = conn.execute('SELECT username, email, plan FROM users WHERE id=?', (user_id,)).fetchone()
+    keys = conn.execute(
+        'SELECT id, provider, name, key_prefix, created_at FROM api_keys WHERE user_id=? ORDER BY created_at DESC',
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    if not user:
+        flash('User not found.', 'error')
+        return redirect(url_for('overseer'))
+    return render_template('overseer_user_keys.html', user=user, keys=keys, user_id=user_id)
+
+
+@app.route('/overseer/user/<int:user_id>/send-email', methods=['POST'])
+@admin_required
+def overseer_send_email(user_id):
+    """Send an email to a specific user."""
+    subject = request.form.get('subject', '').strip()
+    body    = request.form.get('body', '').strip()
+    if not subject or not body:
+        flash('Subject and message are required.', 'error')
+        return redirect(url_for('overseer'))
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    user = conn.execute('SELECT email, username FROM users WHERE id=?', (user_id,)).fetchone()
+    conn.close()
+    if not user:
+        flash('User not found.', 'error')
+        return redirect(url_for('overseer'))
+    ok, err = send_email(user['email'], subject, body)
+    if ok:
+        flash(f'Email sent to {user["email"]}.', 'success')
+    else:
+        flash(f'Email failed: {err}', 'error')
     return redirect(url_for('overseer'))

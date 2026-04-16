@@ -1,88 +1,259 @@
 {% extends "base.html" %}
 {% block title %}Overseer — Keep Your Secrets{% endblock %}
 
+{% block extra_css %}
+.stat-card { text-align:center; padding:24px; }
+.stat-num  { font-size:2.4rem; font-weight:900; }
+.action-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
+                 z-index:1000; align-items:center; justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal-box { background:var(--dark2); border:1px solid var(--border); border-radius:var(--radius);
+             padding:28px; width:100%; max-width:440px; }
+{% endblock %}
+
 {% block content %}
 <div class="container page">
 
   <!-- Stats Row -->
-  <div class="grid-4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
-    <div class="card" style="text-align:center;padding:24px;">
-      <div style="font-size:2.4rem;font-weight:900;color:var(--text);">{{ total }}</div>
-      <div style="color:var(--text-muted);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Total Users</div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:28px;">
+    <div class="card stat-card">
+      <div class="stat-num" style="color:var(--text);">{{ total }}</div>
+      <div style="color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;margin-top:4px;">Total Users</div>
     </div>
-    <div class="card" style="text-align:center;padding:24px;">
-      <div style="font-size:2.4rem;font-weight:900;color:var(--green);">{{ paid }}</div>
-      <div style="color:var(--text-muted);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Paid Users</div>
+    <div class="card stat-card">
+      <div class="stat-num" style="color:var(--green);">{{ paid }}</div>
+      <div style="color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;margin-top:4px;">Paid Users</div>
     </div>
-    <div class="card" style="text-align:center;padding:24px;">
-      <div style="font-size:2.4rem;font-weight:900;color:var(--text-muted);">{{ free }}</div>
-      <div style="color:var(--text-muted);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Free Users</div>
+    <div class="card stat-card">
+      <div class="stat-num" style="color:var(--text-muted);">{{ free }}</div>
+      <div style="color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;margin-top:4px;">Free Users</div>
     </div>
-    <div class="card" style="text-align:center;padding:24px;">
-      <div style="font-size:2.4rem;font-weight:900;color:var(--brand);">${{ "%.2f"|format(mrr) }}</div>
-      <div style="color:var(--text-muted);font-size:0.82rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">MRR @ $14.99</div>
+    <div class="card stat-card">
+      <div class="stat-num" style="color:var(--brand);">${{ "%.2f"|format(mrr) }}</div>
+      <div style="color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;margin-top:4px;">MRR</div>
     </div>
+    <div class="card stat-card">
+      <div class="stat-num" style="color:var(--brand);">{{ signups_30d }}</div>
+      <div style="color:var(--text-muted);font-size:0.78rem;text-transform:uppercase;margin-top:4px;">New (30d)</div>
+    </div>
+  </div>
+
+  <!-- Search + Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
+    <strong>👥 All Users ({{ total }})</strong>
+    <form method="GET" action="/overseer" style="display:flex;gap:8px;align-items:center;">
+      <input name="q" value="{{ search }}" placeholder="Search username or email…"
+             style="width:240px;padding:7px 12px;background:var(--dark3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;">
+      <button class="btn btn-outline btn-sm" type="submit">Search</button>
+      {% if search %}<a href="/overseer" class="btn btn-sm" style="color:var(--text-muted);">✕ Clear</a>{% endif %}
+    </form>
+    <a href="/overseer/logout" class="btn btn-outline btn-sm">Logout</a>
   </div>
 
   <!-- Users Table -->
   <div class="card" style="padding:0;overflow:hidden;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-      <strong>👥 All Users ({{ total }})</strong>
-      <a href="/overseer/logout" class="btn btn-outline btn-sm">Logout</a>
-    </div>
     <table>
       <thead>
         <tr>
           <th>Username</th>
           <th>Email</th>
           <th>Plan</th>
-          <th>API Keys</th>
+          <th>Keys</th>
+          <th>Last Login</th>
           <th>Joined</th>
-          <th>Actions</th>
+          <th>Note</th>
+          <th style="min-width:340px;">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for u in users %}
-        <tr>
-          <td><strong>{{ u.username }}</strong>{% if u.is_admin %} <span class="badge badge-brand">admin</span>{% endif %}</td>
-          <td style="color:var(--text-muted);">{{ u.email }}</td>
+        <tr style="{% if u.suspended %}opacity:0.5;{% endif %}">
+          <td>
+            <strong>{{ u.username }}</strong>
+            {% if u.is_admin %}<span class="badge badge-brand" style="margin-left:4px;">admin</span>{% endif %}
+            {% if u.suspended %}<span class="badge badge-red" style="margin-left:4px;">suspended</span>{% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:0.85rem;">{{ u.email }}</td>
           <td>
             {% if u.plan in ('pro','enterprise') %}
-              <span class="badge badge-green">{{ u.plan|title }} $14.99/mo</span>
+              <span class="badge badge-green">{{ u.plan|title }}</span>
             {% elif u.plan == 'demo' %}
-              <span class="badge badge-gray">Demo</span>
+              <span class="badge badge-brand">Demo</span>
             {% else %}
               <span class="badge badge-gray">Free</span>
             {% endif %}
           </td>
-          <td>{{ u.key_count }}</td>
-          <td style="color:var(--text-muted);">{{ u.created_at[:10] if u.created_at else '—' }}</td>
-          <td style="display:flex;gap:6px;flex-wrap:wrap;">
+          <td>
+            {% if u.key_count > 0 %}
+              <a href="/overseer/user/{{ u.id }}/keys" style="color:var(--brand);">{{ u.key_count }} 👁️</a>
+            {% else %}0{% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ u.last_login[:10] if u.last_login else '—' }}</td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+          <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.8rem;color:var(--text-muted);"
+              title="{{ u.admin_note or '' }}">
+            {{ u.admin_note or '—' }}
+          </td>
+          <td>
             {% if not u.is_admin %}
-              {% if u.plan == 'free' or u.plan == 'demo' %}
-              <form method="POST" action="/overseer/user/{{ u.id }}/upgrade" style="display:inline">
-                <button class="btn btn-sm" style="background:var(--green);color:#fff;">Upgrade</button>
+            <div class="action-row">
+
+              <!-- Change Plan -->
+              <form method="POST" action="/overseer/user/{{ u.id }}/upgrade" style="display:flex;gap:4px;">
+                <select name="plan" style="padding:4px 8px;background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.8rem;">
+                  <option value="free" {% if u.plan=='free' %}selected{% endif %}>Free</option>
+                  <option value="pro" {% if u.plan=='pro' %}selected{% endif %}>Pro</option>
+                  <option value="enterprise" {% if u.plan=='enterprise' %}selected{% endif %}>Enterprise</option>
+                  <option value="demo" {% if u.plan=='demo' %}selected{% endif %}>Demo</option>
+                </select>
+                <button class="btn btn-sm btn-primary" type="submit">Set</button>
               </form>
-              {% else %}
-              <form method="POST" action="/overseer/user/{{ u.id }}/downgrade" style="display:inline">
-                <button class="btn btn-outline btn-sm">Downgrade</button>
+
+              <!-- View Keys -->
+              <a href="/overseer/user/{{ u.id }}/keys" class="btn btn-outline btn-sm">🔑</a>
+
+              <!-- Suspend / Reactivate -->
+              <form method="POST" action="/overseer/user/{{ u.id }}/suspend" style="display:inline"
+                    onsubmit="return confirm('{% if u.suspended %}Reactivate{% else %}Suspend{% endif %} {{ u.username }}?')">
+                <button class="btn btn-sm {% if u.suspended %}btn-primary{% else %}btn-outline{% endif %}">
+                  {% if u.suspended %}✅{% else %}🚫{% endif %}
+                </button>
               </form>
-              {% endif %}
+
+              <!-- Force Logout -->
+              <form method="POST" action="/overseer/user/{{ u.id }}/force-logout" style="display:inline"
+                    onsubmit="return confirm('Revoke all sessions for {{ u.username }}?')">
+                <button class="btn btn-outline btn-sm" title="Force logout / revoke tokens">🔄</button>
+              </form>
+
+              <!-- Reset Password -->
+              <button class="btn btn-outline btn-sm" onclick="openResetModal({{ u.id }}, '{{ u.username }}')"
+                      title="Reset password">🔑✏️</button>
+
+              <!-- Send Email -->
+              <button class="btn btn-outline btn-sm" onclick="openEmailModal({{ u.id }}, '{{ u.username }}', '{{ u.email }}')"
+                      title="Send email">✉️</button>
+
+              <!-- Add Note -->
+              <button class="btn btn-outline btn-sm" onclick="openNoteModal({{ u.id }}, '{{ u.username }}', `{{ u.admin_note or '' }}`)"
+                      title="Admin note">📝</button>
+
+              <!-- Delete -->
               <form method="POST" action="/overseer/user/{{ u.id }}/delete" style="display:inline"
-                    onsubmit="return confirm('Delete {{ u.username }}? This cannot be undone.')">
-                <button class="btn btn-danger btn-sm">Delete</button>
+                    onsubmit="return confirm('⚠️ Permanently delete {{ u.username }} and all their data?')">
+                <button class="btn btn-danger btn-sm">🗑️</button>
               </form>
+
+            </div>
             {% else %}
-              <span style="color:var(--text-muted);font-size:0.82rem;">—</span>
+              <span style="color:var(--text-muted);font-size:0.82rem;">— admin —</span>
             {% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">No users yet.</td></tr>
+        <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">
+          {% if search %}No users matching "{{ search }}".{% else %}No users yet.{% endif %}
+        </td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-
 </div>
+
+<!-- Reset Password Modal -->
+<div class="modal-overlay" id="resetModal">
+  <div class="modal-box">
+    <h3 style="margin-bottom:16px;">🔑 Reset Password</h3>
+    <p style="color:var(--text-muted);margin-bottom:16px;">Setting new password for <strong id="resetUsername"></strong></p>
+    <form method="POST" id="resetForm">
+      <div class="form-group">
+        <label>New Password</label>
+        <div style="position:relative;">
+          <input type="password" name="new_password" id="resetPwField" required minlength="8"
+                 placeholder="Min 8 characters" style="padding-right:44px;">
+          <button type="button" class="pw-toggle" onclick="toggleField('resetPwField',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;">👁️</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary">Reset Password</button>
+        <button type="button" class="btn btn-outline" onclick="closeModal('resetModal')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Send Email Modal -->
+<div class="modal-overlay" id="emailModal">
+  <div class="modal-box">
+    <h3 style="margin-bottom:4px;">✉️ Send Email</h3>
+    <p style="color:var(--text-muted);margin-bottom:16px;">To: <strong id="emailTarget"></strong></p>
+    <form method="POST" id="emailForm">
+      <div class="form-group">
+        <label>Subject</label>
+        <input type="text" name="subject" required placeholder="Email subject">
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea name="body" required rows="5" placeholder="Your message…" style="resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary">Send Email</button>
+        <button type="button" class="btn btn-outline" onclick="closeModal('emailModal')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Note Modal -->
+<div class="modal-overlay" id="noteModal">
+  <div class="modal-box">
+    <h3 style="margin-bottom:4px;">📝 Admin Note</h3>
+    <p style="color:var(--text-muted);margin-bottom:16px;">For: <strong id="noteUsername"></strong></p>
+    <form method="POST" id="noteForm">
+      <div class="form-group">
+        <label>Note (max 500 chars)</label>
+        <textarea name="note" id="noteText" rows="4" maxlength="500"
+                  placeholder="Internal note — not visible to user" style="resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary">Save Note</button>
+        <button type="button" class="btn btn-outline" onclick="closeModal('noteModal')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openResetModal(userId, username) {
+  document.getElementById('resetUsername').textContent = username;
+  document.getElementById('resetForm').action = `/overseer/user/${userId}/reset-password`;
+  document.getElementById('resetModal').classList.add('open');
+}
+function openEmailModal(userId, username, email) {
+  document.getElementById('emailTarget').textContent = `${username} <${email}>`;
+  document.getElementById('emailForm').action = `/overseer/user/${userId}/send-email`;
+  document.getElementById('emailModal').classList.add('open');
+}
+function openNoteModal(userId, username, currentNote) {
+  document.getElementById('noteUsername').textContent = username;
+  document.getElementById('noteForm').action = `/overseer/user/${userId}/note`;
+  document.getElementById('noteText').value = currentNote;
+  document.getElementById('noteModal').classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+function toggleField(fieldId, btn) {
+  const f = document.getElementById(fieldId);
+  f.type = f.type === 'password' ? 'text' : 'password';
+  btn.textContent = f.type === 'password' ? '👁️' : '🙈';
+}
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if(e.target === el) el.classList.remove('open'); });
+});
+</script>
 {% endblock %}

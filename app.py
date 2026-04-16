@@ -316,15 +316,20 @@ def rate_limit(f):
 # Providers
 PROVIDERS = {
     'anthropic': {'name': 'Anthropic (Claude)', 'prefix': 'sk-ant-'},
-    'groq': {'name': 'Groq', 'prefix': 'gsk_'},
-    'xai': {'name': 'xAI (Grok)', 'prefix': 'xai-'},
-    'qwen': {'name': 'Qwen', 'prefix': 'sk-'},
-    'openai': {'name': 'OpenAI', 'prefix': 'sk-'},
-    'mistral': {'name': 'Mistral', 'prefix': 'sk-'},
+    'groq':      {'name': 'Groq',               'prefix': 'gsk_'},
+    'xai':       {'name': 'xAI (Grok)',          'prefix': 'xai-'},
+    'openrouter':{'name': 'OpenRouter',           'prefix': 'sk-or-'},
+    'github':    {'name': 'GitHub',               'prefix': 'ghp_'},
+    'gitlab':    {'name': 'GitLab',               'prefix': 'glpat-'},
+    'openai':    {'name': 'OpenAI',               'prefix': 'sk-'},
+    'qwen':      {'name': 'Qwen',                 'prefix': 'sk-'},
+    'mistral':   {'name': 'Mistral',              'prefix': 'sk-'},
 }
 
 def get_provider(key):
-    for name, info in PROVIDERS.items():
+    # Check longer/more-specific prefixes first to avoid false matches
+    sorted_providers = sorted(PROVIDERS.items(), key=lambda x: -len(x[1]['prefix']))
+    for name, info in sorted_providers:
         if key.startswith(info['prefix']):
             return name
     return 'unknown'

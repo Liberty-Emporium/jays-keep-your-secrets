@@ -346,9 +346,19 @@ def login_required(f):
 
 # Routes
 # ── OpenRouter AI (single provider) ──────────────────────────────────────────
+def get_config(key, default=''):
+    """Get a value from system config file."""
+    cfg = load_system_config()
+    return cfg.get(key, default)
+
+def set_config(key, value):
+    """Set a value in system config file."""
+    cfg = load_system_config()
+    cfg[key] = value
+    save_system_config(cfg)
+
 def get_openrouter_key(user_id=None):
     """Get OpenRouter API key from config or env."""
-    import os
     return get_config('openrouter_key', os.environ.get('OPENROUTER_API_KEY', ''))
 
 def get_openrouter_model(user_id=None):
@@ -1420,52 +1430,17 @@ def key_status():
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
-    """Settings page"""
+    """Settings page — OpenRouter key + model selection."""
     if request.method == 'POST':
-        key = request.form.get('key', '').strip()
-        client_id = request.form.get('client_id', '').strip()
-        client_secret = request.form.get('client_secret', '').strip()
-        name = request.form.get('name', '').strip()
-        provider = request.form.get('provider', 'qwen')
-        category = request.form.get('category', 'ai')
-        
-        # Save to system config (not visible to users)
-        config = load_system_config()
-        if 'api_keys' not in config:
-            config['api_keys'] = []
-        
-        # Handle OAuth (client_id + client_secret) or regular API key
-        if category == 'oauth':
-            if not client_id or not client_secret:
-                flash('Client ID and Secret are required', 'error')
-                return redirect(url_for('settings'))
-            secret_hash = hashlib.sha256(client_secret.encode()).hexdigest()[:8]
-            config['api_keys'].append({
-                'provider': provider,
-                'name': provider,
-                'category': 'oauth',
-                'client_id': client_id,
-                'client_secret_hash': secret_hash + '...',
-                'added': datetime.datetime.now().isoformat()
-            })
-        else:
-            if not key:
-                flash('API key is required', 'error')
-                return redirect(url_for('settings'))
-            key_hash = hash_key(key)
-            config['api_keys'].append({
-                'provider': provider,
-                'name': name or provider,
-                'category': category,
-                'key_hash': key_hash[:8] + '...',
-                'added': datetime.datetime.now().isoformat()
-            })
-        save_system_config(config)
-        
-        flash('API key saved to system!', 'success')
-        
-        return redirect(url_for('dashboard'))
-    
+        or_key   = request.form.get('openrouter_key', '').strip()
+        or_model = request.form.get('openrouter_model', '').strip()
+        if or_key:
+            set_config('openrouter_key', or_key)
+        if or_model:
+            set_config('openrouter_model', or_model)
+        flash('Settings saved!', 'success')
+        return redirect(url_for('settings'))
+
     return render_template('settings.html',
         key_set=bool(get_openrouter_key()),
         current_key=get_openrouter_key(),

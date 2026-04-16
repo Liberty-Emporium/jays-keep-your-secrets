@@ -835,6 +835,71 @@ def api_create_token():
         'message': 'Use this token in Authorization header: Bearer YOUR_TOKEN'
     })
 
+# ── UI-based token generation (logged-in users only, no password needed) ────
+@app.route('/api/token/ui', methods=['POST'])
+@rate_limit
+def api_token_ui_generate():
+    """Generate an API token from a logged-in browser session.
+    No password needed — session auth is sufficient.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    # CSRF check
+    token = request.headers.get('X-CSRF-Token')
+    if not token or token != session.get('csrf_token'):
+        return jsonify({'error': 'Invalid CSRF token'}), 403
+
+    label = 'ui-generated'
+    expires_days = 365  # 1 year
+    raw_token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = (datetime.datetime.utcnow() + datetime.timedelta(days=expires_days)).isoformat()
+
+    conn = get_db()
+    try:
+        # Revoke any existing ui-generated token for this user
+        conn.execute('DELETE FROM api_tokens WHERE user_id = ? AND label = ?', (user_id, label))
+        conn.execute(
+            'INSERT INTO api_tokens (user_id, token_hash, label, expires_at) VALUES (?, ?, ?, ?)',
+            (user_id, token_hash, label, expires_at)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        'success': True,
+        'api_token': raw_token,
+        'label': label,
+        'expires_at': expires_at,
+        'message': 'Use in Authorization: Bearer YOUR_TOKEN header'
+    })
+
+
+@app.route('/api/token/ui', methods=['DELETE'])
+@rate_limit
+def api_token_ui_revoke():
+    """Revoke the UI-generated token for the logged-in user."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    token = request.headers.get('X-CSRF-Token')
+    if not token or token != session.get('csrf_token'):
+        return jsonify({'error': 'Invalid CSRF token'}), 403
+
+    conn = get_db()
+    try:
+        conn.execute('DELETE FROM api_tokens WHERE user_id = ? AND label = ?', (user_id, 'ui-generated'))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({'success': True, 'message': 'Token revoked'})
+
+
 @app.route('/api/keys', methods=['GET'])
 @rate_limit
 def api_list_keys():

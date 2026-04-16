@@ -21,6 +21,41 @@ import datetime
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, g
 
+# ── Security core (bcrypt + pepper + session fixation fix) ───
+try:
+    import bcrypt as _bcrypt
+    _BCRYPT_OK = True
+except ImportError:
+    _BCRYPT_OK = False
+
+def _get_pepper():
+    return os.environ.get('PASSWORD_PEPPER', '')
+
+def _hash_password(password):
+    """Hash password with bcrypt + pepper. Falls back to sha256."""
+    peppered = _get_pepper() + password
+    if _BCRYPT_OK:
+        h = _bcrypt.hashpw(peppered.encode('utf-8'), _bcrypt.gensalt(rounds=12))
+        return 'bcrypt:' + h.decode('utf-8')
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def _verify_password(password, stored):
+    """Verify password. Handles bcrypt and legacy plain sha256."""
+    try:
+        if stored.startswith('bcrypt:'):
+            if not _BCRYPT_OK:
+                return False
+            peppered = _get_pepper() + password
+            return _bcrypt.checkpw(peppered.encode('utf-8'), stored[7:].encode('utf-8'))
+        # Legacy plain sha256 — still works for old accounts
+        legacy = hashlib.sha256(password.encode()).hexdigest()
+        return secrets.compare_digest(stored, legacy)
+    except Exception:
+        return False
+
+def _needs_upgrade(stored):
+    return not stored.startswith('bcrypt:')
+
 import time as _rl_time
 from collections import defaultdict as _defaultdict
 _rate_store = _defaultdict(list)
@@ -370,11 +405,22 @@ def login():
         user = c.fetchone()
         conn.close()
         
-        if user and user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
+        if user and _verify_password(password, user['password_hash']):
+            # Auto-upgrade legacy sha256 hash to bcrypt on login
+            if _needs_upgrade(user['password_hash']):
+                _ug = get_db()
+                _ug.execute('UPDATE users SET password_hash=? WHERE id=?',
+                            (_hash_password(password), user['id']))
+                _ug.commit(); _ug.close()
+            # Secure session — clear first prevents session fixation attacks
+            session.clear()
+            session.permanent = True
             session['logged_in'] = True
             session['username'] = user['username']
             session['user_id'] = user['id']
             session['plan'] = user['plan']
+            session['is_admin'] = bool(user['is_admin'])
+            session['csrf_token'] = secrets.token_hex(32)
             flash('Welcome back!', 'success')
             return redirect(url_for('dashboard'))
         else:
@@ -395,11 +441,11 @@ def signup():
             flash('Passwords do not match', 'error')
             return redirect(url_for('signup'))
         
-        if len(password) < 6:
-            flash('Password must be at least 6 characters', 'error')
+        if len(password) < 8:
+            flash('Password must be at least 8 characters', 'error')
             return redirect(url_for('signup'))
-        
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        password_hash = _hash_password(password)
         
         try:
             conn = get_db()
@@ -410,10 +456,14 @@ def signup():
             conn.commit()
             conn.close()
             
+            session.clear()
+            session.permanent = True
             session['logged_in'] = True
             session['username'] = username
             session['user_id'] = user_id
             session['plan'] = 'free'
+            session['is_admin'] = False
+            session['csrf_token'] = secrets.token_hex(32)
             flash('Account created! Welcome!', 'success')
             return redirect(url_for('dashboard'))
         except sqlite3.IntegrityError:
@@ -497,10 +547,10 @@ def change_password():
             flash('Passwords do not match', 'error')
             return redirect(url_for('change_password'))
         
-        if len(new_pass) < 6:
-            flash('Password must be at least 6 characters', 'error')
+        if len(new_pass) < 8:
+            flash('Password must be at least 8 characters', 'error')
             return redirect(url_for('change_password'))
-        
+
         conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -512,13 +562,13 @@ def change_password():
             conn.close()
             return redirect(url_for('logout'))
 
-        if user['password_hash'] != hashlib.sha256(current.encode()).hexdigest():
+        if not _verify_password(current, user['password_hash']):
             flash('Current password is incorrect', 'error')
             conn.close()
             return redirect(url_for('change_password'))
 
         c.execute('UPDATE users SET password_hash = ? WHERE id = ?',
-                 (hashlib.sha256(new_pass.encode()).hexdigest(), session.get('user_id')))
+                 (_hash_password(new_pass), session.get('user_id')))
         conn.commit()
         conn.close()
         
@@ -658,13 +708,13 @@ def reset_password(token):
     if request.method == 'POST':
         new_pass = request.form.get('new_password', '')
         confirm  = request.form.get('confirm_password', '')
-        if len(new_pass) < 6:
-            error = 'Password must be at least 6 characters.'
+        if len(new_pass) < 8:
+            error = 'Password must be at least 8 characters.'
         elif new_pass != confirm:
             error = 'Passwords do not match.'
         else:
             c.execute('UPDATE users SET password_hash = ? WHERE id = ?',
-                      (hashlib.sha256(new_pass.encode()).hexdigest(), record['user_id']))
+                      (_hash_password(new_pass), record['user_id']))
             c.execute('DELETE FROM password_resets WHERE token = ?', (token,))
             conn.commit()
             conn.close()
@@ -727,7 +777,7 @@ def api_create_token():
     c.execute('SELECT * FROM users WHERE username = ?', (username,))
     user = c.fetchone()
 
-    if not user or user['password_hash'] != hashlib.sha256(password.encode()).hexdigest():
+    if not user or not _verify_password(password, user['password_hash']):
         conn.close()
         return jsonify({'error': 'Invalid credentials'}), 401
 
@@ -1419,7 +1469,7 @@ def overseer_login():
         conn.row_factory = sqlite3.Row
         user = conn.execute('SELECT * FROM users WHERE username=? AND is_admin=1', (username,)).fetchone()
         conn.close()
-        if user and user['password_hash'] == hashlib.sha256(password.encode()).hexdigest():
+        if user and _verify_password(password, user['password_hash']):
             session['is_admin'] = True
             session['admin_user'] = username
             return redirect(url_for('overseer'))

@@ -1179,7 +1179,12 @@ def api_rotate_brain_key():
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok'}), 200
+    try:
+        db = get_db()
+        db.execute('SELECT 1').fetchone()
+        return jsonify({'status': 'ok', 'db': 'ok'}), 200
+    except Exception as e:
+        return jsonify({'status': 'degraded', 'db': str(e)}), 503
 
 
 # ============================================================

@@ -850,7 +850,7 @@ def validate_api_token(token):
 
 @app.route('/health')
 def health():
-    return 'ok', 200
+    return jsonify({'status': 'ok'}), 200
 
 
 # ============================================================

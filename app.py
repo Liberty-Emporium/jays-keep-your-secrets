@@ -178,7 +178,28 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id)
     )''')
-    
+
+    # API Tokens table — real, signed, expiring tokens for bot access
+    c.execute('''CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        label TEXT DEFAULT 'default',
+        expires_at TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )''')
+
+    # Brain key table — encrypted brain password, admin-only
+    c.execute('''CREATE TABLE IF NOT EXISTS brain_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT NOT NULL DEFAULT 'default',
+        key_value TEXT NOT NULL,
+        rotated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by INTEGER,
+        FOREIGN KEY (created_by) REFERENCES users (id)
+    )''')
+
     conn.commit()
     
     c.execute("SELECT id FROM users WHERE username = 'admin'")
@@ -688,35 +709,47 @@ def forgot_username():
 @app.route('/api/token', methods=['POST'])
 @rate_limit
 def api_create_token():
-    """Get access token - pass username + password in JSON body"""
+    """Get a real, signed, expiring API token.
+    POST JSON: {"username": "...", "password": "...", "label": "echo", "expires_days": 90}
+    """
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     password = data.get('password', '')
-    
+    label    = data.get('label', 'default').strip()[:64]
+    expires_days = int(data.get('expires_days', 90))
+
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
-    
+
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute('SELECT * FROM users WHERE username = ?', (username,))
     user = c.fetchone()
-    conn.close()
-    
+
     if not user or user['password_hash'] != hashlib.sha256(password.encode()).hexdigest():
+        conn.close()
         return jsonify({'error': 'Invalid credentials'}), 401
-    
-    # Generate a unique token
-    token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    
-    # Store token (we'd need a tokens table, but let's use a simple approach)
-    # For now, return a simple token based on user_id + timestamp
-    api_token = f"ait_{user['id']}_{secrets.token_hex(16)}"
-    
+
+    # Generate a cryptographically secure token
+    raw_token = secrets.token_urlsafe(48)          # 64-char URL-safe token
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = (datetime.datetime.utcnow() + datetime.timedelta(days=expires_days)).isoformat()
+
+    # Revoke any existing token with the same label for this user
+    c.execute('DELETE FROM api_tokens WHERE user_id = ? AND label = ?', (user['id'], label))
+    c.execute(
+        'INSERT INTO api_tokens (user_id, token_hash, label, expires_at) VALUES (?, ?, ?, ?)',
+        (user['id'], token_hash, label, expires_at)
+    )
+    conn.commit()
+    conn.close()
+
     return jsonify({
         'success': True,
-        'api_token': api_token,
+        'api_token': raw_token,
+        'label': label,
+        'expires_at': expires_at,
         'message': 'Use this token in Authorization header: Bearer YOUR_TOKEN'
     })
 
@@ -836,17 +869,161 @@ def api_delete_key(key_id):
     return jsonify({'success': True, 'message': 'API key deleted'})
 
 def validate_api_token(token):
-    """Validate token and return user_id (or None)"""
-    # Simple validation: tokens start with "ait_USERID_"
-    if not token.startswith('ait_'):
+    """Validate token against DB, check expiry, return user_id or None."""
+    if not token or len(token) < 16:
         return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
     try:
-        parts = token.split('_')
-        if len(parts) >= 2:
-            return int(parts[1])
-    except:
-        pass
-    return None
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            'SELECT user_id, expires_at FROM api_tokens WHERE token_hash = ?',
+            (token_hash,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        if row['expires_at']:
+            expires = datetime.datetime.fromisoformat(row['expires_at'])
+            if datetime.datetime.utcnow() > expires:
+                return None
+        return row['user_id']
+    except Exception:
+        return None
+
+# ============ BRAIN KEY API (admin only) ============
+# These endpoints let KiloClaw/Echo fetch and rotate the brain encryption password.
+# Only admin-level users can access these.
+
+def _require_admin_token(token):
+    """Returns user dict if token is valid AND user is admin, else None."""
+    user_id = validate_api_token(token)
+    if not user_id:
+        return None
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    user = conn.execute('SELECT id, username, is_admin FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn.close()
+    if not user or not user['is_admin']:
+        return None
+    return user
+
+@app.route('/api/brain-key', methods=['GET'])
+@rate_limit
+def api_get_brain_key():
+    """GET the current brain encryption key. Admin token required.
+    Returns: {success, label, key_value, rotated_at}
+    """
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    user = _require_admin_token(auth[7:])
+    if not user:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    label = request.args.get('label', 'default')
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        'SELECT label, key_value, rotated_at FROM brain_keys WHERE label = ? ORDER BY id DESC LIMIT 1',
+        (label,)
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': f'No brain key found for label={label}. Set one first via PUT /api/brain-key'}), 404
+
+    return jsonify({
+        'success': True,
+        'label': row['label'],
+        'key_value': row['key_value'],
+        'rotated_at': row['rotated_at']
+    })
+
+@app.route('/api/brain-key', methods=['PUT'])
+@rate_limit
+def api_set_brain_key():
+    """PUT (create/update) the brain encryption key. Admin token required.
+    Body JSON: {"label": "default", "key_value": "your-strong-passphrase"}
+    """
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    user = _require_admin_token(auth[7:])
+    if not user:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json() or {}
+    label     = data.get('label', 'default').strip()[:64]
+    key_value = data.get('key_value', '').strip()
+
+    if not key_value or len(key_value) < 12:
+        return jsonify({'error': 'key_value must be at least 12 characters'}), 400
+
+    conn = get_db()
+    # Overwrite existing key for this label
+    conn.execute('DELETE FROM brain_keys WHERE label = ?', (label,))
+    conn.execute(
+        'INSERT INTO brain_keys (label, key_value, rotated_at, created_by) VALUES (?, ?, datetime("now"), ?)',
+        (label, key_value, user['id'])
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'message': f'Brain key [{label}] saved. Rotate save-brain.sh next session.',
+        'label': label,
+        'rotated_at': datetime.datetime.utcnow().isoformat()
+    })
+
+@app.route('/api/brain-key/rotate', methods=['POST'])
+@rate_limit
+def api_rotate_brain_key():
+    """POST to rotate the brain key to a new value. Admin token required.
+    Body JSON: {"label": "default", "new_key": "new-passphrase", "old_key": "old-passphrase"}
+    old_key is verified before rotation as a safety check.
+    """
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'error': 'Authorization header required'}), 401
+    user = _require_admin_token(auth[7:])
+    if not user:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data    = request.get_json() or {}
+    label   = data.get('label', 'default').strip()[:64]
+    new_key = data.get('new_key', '').strip()
+    old_key = data.get('old_key', '').strip()
+
+    if not new_key or len(new_key) < 12:
+        return jsonify({'error': 'new_key must be at least 12 characters'}), 400
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        'SELECT key_value FROM brain_keys WHERE label = ? ORDER BY id DESC LIMIT 1',
+        (label,)
+    ).fetchone()
+
+    if row and old_key and row['key_value'] != old_key:
+        conn.close()
+        return jsonify({'error': 'old_key does not match current key'}), 403
+
+    conn.execute('DELETE FROM brain_keys WHERE label = ?', (label,))
+    conn.execute(
+        'INSERT INTO brain_keys (label, key_value, rotated_at, created_by) VALUES (?, ?, datetime("now"), ?)',
+        (label, new_key, user['id'])
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'message': f'Brain key [{label}] rotated. Run save-brain.sh to re-encrypt.',
+        'label': label,
+        'rotated_at': datetime.datetime.utcnow().isoformat()
+    })
 
 @app.route('/health')
 def health():

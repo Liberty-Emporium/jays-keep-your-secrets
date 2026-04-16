@@ -88,6 +88,40 @@
 
     <button type="submit" class="btn btn-primary" style="min-width:160px;">💾 Save Settings</button>
   </form>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- API Access Card (outside the settings form)    -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="card" style="margin-top:24px;padding:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+      <strong>🤖 API Access Token</strong>
+      <span style="font-size:0.78rem;color:var(--text-muted);">Use this token to access your keys programmatically</span>
+    </div>
+
+    <div id="apiTokenBox" style="display:none;margin-bottom:14px;">
+      <label style="font-size:0.82rem;color:var(--text-muted);display:block;margin-bottom:6px;">Your API Token (shown once — copy it now!)</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" id="apiTokenValue" readonly
+               style="font-family:monospace;font-size:0.82rem;background:var(--dark3);flex:1;cursor:text;">
+        <button type="button" onclick="copyToken()" class="btn btn-outline btn-sm">📋 Copy</button>
+      </div>
+      <div style="margin-top:8px;padding:10px 14px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:var(--radius);font-size:0.8rem;color:#fbbf24;">
+        ⚠️ Save this token now — it won't be shown again. Use it in the <code>Authorization: Bearer YOUR_TOKEN</code> header.
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button type="button" onclick="generateToken()" class="btn btn-primary btn-sm" id="genBtn">⚡ Generate New Token</button>
+      <button type="button" onclick="revokeToken()" class="btn btn-outline btn-sm" style="color:#f87171;border-color:#f87171;">🗑️ Revoke Token</button>
+    </div>
+
+    <div style="margin-top:14px;padding:12px 16px;background:var(--dark3);border-radius:var(--radius);font-size:0.8rem;color:var(--text-muted);">
+      <strong style="color:var(--text);">How to use:</strong><br>
+      <code style="color:var(--brand);">GET {{ request.host_url }}api/keys</code><br>
+      <code style="color:var(--text-muted);">Authorization: Bearer YOUR_TOKEN</code>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 
@@ -109,6 +143,61 @@ function toggleField(id, btn) {
   const f = document.getElementById(id);
   f.type = f.type === 'password' ? 'text' : 'password';
   btn.textContent = f.type === 'password' ? '👁️' : '🙈';
+}
+
+async function generateToken() {
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  try {
+    const res = await fetch('/api/token/ui', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': '{{ csrf_token() }}'}
+    });
+    const data = await res.json();
+    if (data.api_token) {
+      document.getElementById('apiTokenValue').value = data.api_token;
+      document.getElementById('apiTokenBox').style.display = 'block';
+      btn.textContent = '✓ Token Generated';
+    } else {
+      alert(data.error || 'Failed to generate token');
+      btn.textContent = '⚡ Generate New Token';
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+    btn.textContent = '⚡ Generate New Token';
+  }
+  btn.disabled = false;
+}
+
+async function revokeToken() {
+  if (!confirm('Revoke your current API token? Any apps using it will stop working.')) return;
+  try {
+    const res = await fetch('/api/token/ui', {
+      method: 'DELETE',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': '{{ csrf_token() }}'}
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('apiTokenBox').style.display = 'none';
+      document.getElementById('apiTokenValue').value = '';
+      document.getElementById('genBtn').textContent = '⚡ Generate New Token';
+      alert('✅ Token revoked.');
+    } else {
+      alert(data.error || 'Failed to revoke token');
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+function copyToken() {
+  const val = document.getElementById('apiTokenValue').value;
+  navigator.clipboard.writeText(val).then(() => {
+    const btn = event.target;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+  });
 }
 </script>
 {% endblock %}

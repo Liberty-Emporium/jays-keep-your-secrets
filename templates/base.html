@@ -106,6 +106,11 @@
     #toast { position: fixed; bottom: 20px; right: 20px; background: var(--dark2); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 18px; max-width: 300px; z-index: 9999; display: none; font-size: 0.88rem; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
   </style>
   <style>{% block extra_css %}{% endblock %}</style>
+    <meta property="og:image" content="{{ request.host_url }}static/preview.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:image" content="{{ request.host_url }}static/preview.png">
+    <meta name="twitter:card" content="summary_large_image">
 </head>
 <body>
 

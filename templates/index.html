@@ -68,18 +68,106 @@
     {% endif %}
 </div>
 
+<style>
+.model-section { margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; }
+.model-section label { font-size: 0.75rem; opacity: 0.7; display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+.model-select, .model-input {
+  width: 100%; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 7px; padding: 6px 10px; color: white; font-size: 0.82rem; outline: none;
+}
+.model-select option { background: #1a1a2e; }
+.apps-input { width: 100%; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 7px; padding: 6px 10px; color: white; font-size: 0.82rem; outline: none; }
+.save-btn { margin-top: 8px; padding: 5px 14px; background: rgba(99,102,241,.8); border: none;
+  border-radius: 7px; color: white; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%; }
+.save-btn:hover { background: rgba(99,102,241,1); }
+.app-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.app-tag { font-size: 0.7rem; background: rgba(99,102,241,.25); border: 1px solid rgba(99,102,241,.4);
+  padding: 2px 8px; border-radius: 20px; color: #a78bfa; }
+.active-model-badge { font-size: 0.72rem; background: rgba(16,185,129,.2); border: 1px solid rgba(16,185,129,.3);
+  color: #34d399; padding: 2px 8px; border-radius: 20px; display: inline-block; margin-top: 4px; }
+</style>
+
 {% if keys %}
 <div class="key-grid">
     {% for key in keys %}
     <div class="key-card">
         <div class="provider-icon">
-            {% if key.provider == 'anthropic' %}🧠{% elif key.provider == 'groq' %}⚡{% elif key.provider == 'xai' %}🚀{% elif key.provider == 'qwen' %}🐉{% elif key.provider == 'openai' %}💬{% else %}🔑{% endif %}
+            {% if key.provider == 'anthropic' %}🧠{% elif key.provider == 'groq' %}⚡{% elif key.provider == 'openrouter' %}🔀{% elif key.provider == 'xai' %}🚀{% elif key.provider == 'qwen' %}🐉{% elif key.provider == 'openai' %}💬{% else %}🔑{% endif %}
         </div>
         <div class="provider-name">{{ key.name or key.provider }}</div>
         <div class="key-preview">{{ key.key_prefix }}</div>
         <small style="opacity: 0.6;">Added: {{ key.created_at[:10] }}</small>
-        <div style="margin-top: 1rem;">
-            <a href="/delete/{{ key.id }}" class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" onclick="return confirm('Delete this key?')">🗑️ Delete</a>
+
+        {% if key.ai_model %}
+          <div><span class="active-model-badge">🤖 {{ key.ai_model }}</span></div>
+        {% endif %}
+        {% if key.app_names %}
+          <div class="app-tags" style="margin-top:6px">
+            {% for app in key.app_names.split(',') %}{% if app.strip() %}
+              <span class="app-tag">{{ app.strip() }}</span>
+            {% endif %}{% endfor %}
+          </div>
+        {% endif %}
+
+        <!-- Edit form -->
+        <div class="model-section">
+          <form method="POST" action="/key/{{ key.id }}/edit">
+            <label>Apps using this key (comma-separated)</label>
+            <input class="apps-input" type="text" name="app_names"
+              value="{{ key.app_names or '' }}"
+              placeholder="Pet Vet AI, GymForge, Inventory...">
+
+            <label style="margin-top:8px">Active AI Model</label>
+            <select class="model-select" name="ai_model">
+              <option value="">-- Not set --</option>
+              {% set cur = key.ai_model or '' %}
+              {% set models = [
+                ('anthropic/claude-3.5-haiku', 'Claude 3.5 Haiku'),
+                ('anthropic/claude-sonnet-4-5', 'Claude Sonnet 4.5'),
+                ('openai/gpt-4o-mini', 'GPT-4o Mini'),
+                ('openai/gpt-4o', 'GPT-4o'),
+                ('google/gemini-2.0-flash', 'Gemini 2.0 Flash'),
+                ('google/gemini-2.5-pro', 'Gemini 2.5 Pro'),
+                ('meta-llama/llama-3.3-70b-instruct', 'Llama 3.3 70B'),
+                ('mistralai/mistral-large', 'Mistral Large'),
+                ('x-ai/grok-2', 'Grok 2'),
+                ('groq/llama-3.1-70b-versatile', 'Groq Llama 3.1 70B'),
+              ] %}
+              {% for val, label in models %}
+                <option value="{{ val }}" {% if cur == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+
+            <label style="margin-top:8px">Allowed Models (check to restrict)</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+              {% set allowed = (key.allowed_models or '').split(',') | map('trim') | list %}
+              {% for val, label in models %}
+              <label style="display:flex;align-items:center;gap:4px;font-size:.75rem;opacity:1;text-transform:none;letter-spacing:0">
+                <input type="checkbox" name="allowed_models_check" value="{{ val }}"
+                  {% if val in allowed or allowed == [''] or allowed == [] %}checked{% endif %}
+                  style="width:auto">
+                {{ label }}
+              </label>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="allowed_models" id="allowed_{{ key.id }}">
+            <script>
+            (function(){
+              var form = document.currentScript.closest('form');
+              form.addEventListener('submit', function(){
+                var checked = Array.from(form.querySelectorAll('[name=allowed_models_check]:checked')).map(c=>c.value);
+                form.querySelector('#allowed_{{ key.id }}').value = checked.join(',');
+              });
+            })();
+            </script>
+
+            <button type="submit" class="save-btn">💾 Save Settings</button>
+          </form>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <a href="/delete/{{ key.id }}" class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; width:100%; text-align:center; display:block;" onclick="return confirm('Delete this key?')">🗑️ Delete</a>
         </div>
     </div>
     {% endfor %}

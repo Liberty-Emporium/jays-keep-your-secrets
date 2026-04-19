@@ -254,6 +254,10 @@ def init_db():
         "ALTER TABLE users ADD COLUMN suspended INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN admin_note TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN last_login TIMESTAMP",
+        # API key enhancements
+        "ALTER TABLE api_keys ADD COLUMN app_names TEXT DEFAULT ''",
+        "ALTER TABLE api_keys ADD COLUMN ai_model TEXT DEFAULT ''",
+        "ALTER TABLE api_keys ADD COLUMN allowed_models TEXT DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -570,6 +574,27 @@ def delete_key(key_id):
     conn.commit()
     conn.close()
     flash('API key deleted', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/key/<int:key_id>/edit', methods=['POST'])
+@login_required
+def edit_key(key_id):
+    """Update app_names, ai_model, allowed_models for a key."""
+    conn = get_db()
+    c = conn.cursor()
+    # Verify ownership
+    c.execute('SELECT id FROM api_keys WHERE id = ? AND user_id = ?', (key_id, session.get('user_id')))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'error': 'not found'}), 404
+    app_names     = request.form.get('app_names', '').strip()
+    ai_model      = request.form.get('ai_model', '').strip()
+    allowed_models = request.form.get('allowed_models', '').strip()
+    c.execute('UPDATE api_keys SET app_names=?, ai_model=?, allowed_models=? WHERE id=?',
+              (app_names, ai_model, allowed_models, key_id))
+    conn.commit()
+    conn.close()
+    flash('Key settings updated!', 'success')
     return redirect(url_for('dashboard'))
 
 @app.route('/change-password', methods=['GET', 'POST'])

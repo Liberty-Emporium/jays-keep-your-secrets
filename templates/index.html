@@ -93,10 +93,24 @@
     {% for key in keys %}
     <div class="key-card">
         <div class="provider-icon">
-            {% if key.provider == 'anthropic' %}🧠{% elif key.provider == 'groq' %}⚡{% elif key.provider == 'openrouter' %}🔀{% elif key.provider == 'xai' %}🚀{% elif key.provider == 'qwen' %}🐉{% elif key.provider == 'openai' %}💬{% else %}🔑{% endif %}
+            {% if key.key_type == 'pair' %}
+              {{ pair_providers.get(key.pair_provider, pair_providers.get('custom', {'icon':'🔐'})).icon }}
+            {% elif key.provider == 'anthropic' %}🧠{% elif key.provider == 'groq' %}⚡{% elif key.provider == 'openrouter' %}🔀{% elif key.provider == 'xai' %}🚀{% elif key.provider == 'qwen' %}🐉{% elif key.provider == 'openai' %}💬{% else %}🔑{% endif %}
         </div>
         <div class="provider-name">{{ key.name or key.provider }}</div>
-        <div class="key-preview">{{ key.key_prefix }}</div>
+        {% if key.key_type == 'pair' %}
+          {% set pinfo = pair_providers.get(key.pair_provider, pair_providers.get('custom')) %}
+          <div style="margin:6px 0 2px">
+            <div style="font-size:.72rem;opacity:.55;text-transform:uppercase;letter-spacing:.07em">{{ pinfo.id_label }}</div>
+            <div class="key-preview" style="font-size:.82rem">{{ key.client_id[:24] }}{% if key.client_id|length > 24 %}...{% endif %}</div>
+          </div>
+          <div style="margin:4px 0 2px">
+            <div style="font-size:.72rem;opacity:.55;text-transform:uppercase;letter-spacing:.07em">{{ pinfo.secret_label }}</div>
+            <div class="key-preview" style="font-size:.82rem">{{ key.client_secret[:8] }}••••••••••••</div>
+          </div>
+        {% else %}
+          <div class="key-preview">{{ key.key_prefix }}</div>
+        {% endif %}
         <small style="opacity: 0.6;">Added: {{ key.created_at[:10] }}</small>
 
         {% if key.ai_model %}

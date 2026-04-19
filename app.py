@@ -266,6 +266,10 @@ def init_db():
         "ALTER TABLE api_keys ADD COLUMN app_names TEXT DEFAULT ''",
         "ALTER TABLE api_keys ADD COLUMN ai_model TEXT DEFAULT ''",
         "ALTER TABLE api_keys ADD COLUMN allowed_models TEXT DEFAULT ''",
+        "ALTER TABLE api_keys ADD COLUMN key_type TEXT DEFAULT 'single'",
+        "ALTER TABLE api_keys ADD COLUMN client_id TEXT DEFAULT ''",
+        "ALTER TABLE api_keys ADD COLUMN client_secret TEXT DEFAULT ''",
+        "ALTER TABLE api_keys ADD COLUMN pair_provider TEXT DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -336,6 +340,25 @@ PROVIDERS = {
     'openai':    {'name': 'OpenAI',               'prefix': 'sk-'},
     'qwen':      {'name': 'Qwen',                 'prefix': 'sk-'},
     'mistral':   {'name': 'Mistral',              'prefix': 'sk-'},
+}
+
+# Services that use Client ID + Client Secret pairs
+PAIR_PROVIDERS = {
+    'stripe':    {'name': 'Stripe',           'icon': '💳', 'id_label': 'Publishable Key',  'secret_label': 'Secret Key'},
+    'paypal':    {'name': 'PayPal',           'icon': '🅿️',  'id_label': 'Client ID',        'secret_label': 'Client Secret'},
+    'twilio':    {'name': 'Twilio',           'icon': '📞', 'id_label': 'Account SID',      'secret_label': 'Auth Token'},
+    'square':    {'name': 'Square',           'icon': '⬛', 'id_label': 'Application ID',   'secret_label': 'Application Secret'},
+    'sendgrid':  {'name': 'SendGrid',         'icon': '📧', 'id_label': 'API Key Name',     'secret_label': 'API Key'},
+    'mailgun':   {'name': 'Mailgun',          'icon': '📬', 'id_label': 'Domain',           'secret_label': 'API Key'},
+    'aws':       {'name': 'AWS',              'icon': '☁️',  'id_label': 'Access Key ID',    'secret_label': 'Secret Access Key'},
+    'google':    {'name': 'Google / GCP',     'icon': '🔵', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
+    'facebook':  {'name': 'Facebook / Meta',  'icon': '👤', 'id_label': 'App ID',           'secret_label': 'App Secret'},
+    'twitter':   {'name': 'X / Twitter',      'icon': '🐦', 'id_label': 'API Key',          'secret_label': 'API Secret'},
+    'discord':   {'name': 'Discord',          'icon': '🎮', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
+    'shopify':   {'name': 'Shopify',          'icon': '🛍️',  'id_label': 'API Key',          'secret_label': 'API Secret Key'},
+    'hubspot':   {'name': 'HubSpot',          'icon': '🔶', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
+    'zapier':    {'name': 'Zapier',           'icon': '⚡', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
+    'custom':    {'name': 'Custom / Other',   'icon': '🔐', 'id_label': 'Client ID / Key',  'secret_label': 'Secret / Token'},
 }
 
 def get_provider(key):
@@ -539,38 +562,73 @@ def dashboard():
     user = c.fetchone()
     conn.close()
     
-    return render_template('index.html', keys=keys, providers=PROVIDERS, user=user)
+    return render_template('index.html', keys=keys, providers=PROVIDERS, pair_providers=PAIR_PROVIDERS, user=user)
 
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
 @rate_limit
 def add_key():
     if request.method == 'POST':
-        key = request.form.get('key', '').strip()
-        name = request.form.get('name', '').strip()
-        
-        if not key:
-            flash('API key is required', 'error')
-            return redirect(url_for('add_key'))
-        
-        provider = get_provider(key)
-        key_hash = hash_key(key)
-        key_prefix = key[:12] + '...' if len(key) > 12 else key
-        
-        try:
-            conn = get_db()
-            c = conn.cursor()
-            c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
-                     (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
-            conn.commit()
-            conn.close()
-            flash('API key added!', 'success')
-        except sqlite3.IntegrityError:
-            flash('This key already exists', 'error')
-        
-        return redirect(url_for('dashboard'))
-    
-    return render_template('add.html', providers=PROVIDERS)
+        key_type = request.form.get('key_type', 'single')
+
+        if key_type == 'pair':
+            pair_provider = request.form.get('pair_provider', 'custom').strip()
+            client_id     = request.form.get('client_id', '').strip()
+            client_secret = request.form.get('client_secret', '').strip()
+            name          = request.form.get('name', '').strip()
+
+            if not client_id or not client_secret:
+                flash('Both Client ID and Secret are required', 'error')
+                return redirect(url_for('add_key'))
+
+            pinfo = PAIR_PROVIDERS.get(pair_provider, PAIR_PROVIDERS['custom'])
+            display_name = name or pinfo['name']
+            # Store a combined hash so uniqueness constraint still works
+            combined = f"{client_id}:{client_secret}"
+            key_hash   = hash_key(combined)
+            key_prefix = client_id[:16] + '...' if len(client_id) > 16 else client_id
+
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute(
+                    'INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix, key_type, client_id, client_secret, pair_provider) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (session.get('user_id'), pair_provider, display_name, key_hash, key_prefix,
+                     'pair', client_id, client_secret, pair_provider)
+                )
+                conn.commit()
+                conn.close()
+                flash(f'{pinfo["name"]} credentials saved!', 'success')
+            except sqlite3.IntegrityError:
+                flash('These credentials already exist', 'error')
+            return redirect(url_for('dashboard'))
+
+        else:
+            key  = request.form.get('key', '').strip()
+            name = request.form.get('name', '').strip()
+
+            if not key:
+                flash('API key is required', 'error')
+                return redirect(url_for('add_key'))
+
+            provider   = get_provider(key)
+            key_hash   = hash_key(key)
+            key_prefix = key[:12] + '...' if len(key) > 12 else key
+
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
+                         (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
+                conn.commit()
+                conn.close()
+                flash('API key added!', 'success')
+            except sqlite3.IntegrityError:
+                flash('This key already exists', 'error')
+
+            return redirect(url_for('dashboard'))
+
+    return render_template('add.html', providers=PROVIDERS, pair_providers=PAIR_PROVIDERS)
 
 @app.route('/delete/<int:key_id>')
 @login_required

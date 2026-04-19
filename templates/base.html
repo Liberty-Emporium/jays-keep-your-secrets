@@ -120,10 +120,12 @@
     {% if session.get('logged_in') %}
       {% if session.get('role') == 'overseer' or session.get('is_admin') %}
         <a href="/overseer" class="{% if request.path == '/overseer' %}active{% endif %}">🛡️ Overseer</a>
+        <a href="/dashboard" class="{% if request.path == '/dashboard' %}active{% endif %}">🔑 My Keys</a>
       {% else %}
         <a href="/dashboard" class="{% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a>
         <a href="/add" class="btn btn-primary btn-sm">+ Add Key</a>
       {% endif %}
+      <a href="https://jay-portfolio-production.up.railway.app/dashboard" target="_blank" style="color:var(--text-muted)" title="Command Center">🦾 Command Center</a>
       <a href="/settings" class="nav-gear {% if request.path.startswith('/settings') %}active{% endif %}" title="Settings" aria-label="Settings">&#9881;</a>
       <a href="/logout" style="color:var(--text-muted)">Logout</a>
     {% else %}

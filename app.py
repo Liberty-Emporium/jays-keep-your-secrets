@@ -1952,10 +1952,16 @@ def admin_unlock():
     if provided != unlock_secret:
         return jsonify({'error': 'forbidden'}), 403
     conn = get_db()
+    conn = get_db()
     conn.execute('UPDATE users SET failed_logins=0, locked_until=NULL WHERE is_admin=1')
+    # Also sync admin credentials from constants (in case DB has stale hash)
+    if ADMIN_PASSWORD:
+        admin_hash = _hash_password(ADMIN_PASSWORD)
+        conn.execute('UPDATE users SET username=?, email=?, password_hash=? WHERE is_admin=1',
+                     (ADMIN_USER, ADMIN_EMAIL, admin_hash))
     conn.commit()
     conn.close()
-    return jsonify({'ok': True, 'msg': 'Admin account unlocked'})
+    return jsonify({'ok': True, 'msg': 'Admin account unlocked and credentials synced'})
 
 @app.route('/overseer/audit')
 @login_required

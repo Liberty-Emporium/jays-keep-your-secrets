@@ -343,23 +343,91 @@ PROVIDERS = {
 }
 
 # Services that use Client ID + Client Secret pairs
+# fields: list of {label, placeholder, name, type}
+# 'name' maps to form field name (client_id=first, client_secret=second, extra1=third)
 PAIR_PROVIDERS = {
-    'stripe':    {'name': 'Stripe',           'icon': '💳', 'id_label': 'Publishable Key',  'secret_label': 'Secret Key'},
-    'paypal':    {'name': 'PayPal',           'icon': '🅿️',  'id_label': 'Client ID',        'secret_label': 'Client Secret'},
-    'twilio':    {'name': 'Twilio',           'icon': '📞', 'id_label': 'Account SID',      'secret_label': 'Auth Token'},
-    'square':    {'name': 'Square',           'icon': '⬛', 'id_label': 'Application ID',   'secret_label': 'Application Secret'},
-    'sendgrid':  {'name': 'SendGrid',         'icon': '📧', 'id_label': 'API Key Name',     'secret_label': 'API Key'},
-    'mailgun':   {'name': 'Mailgun',          'icon': '📬', 'id_label': 'Domain',           'secret_label': 'API Key'},
-    'aws':       {'name': 'AWS',              'icon': '☁️',  'id_label': 'Access Key ID',    'secret_label': 'Secret Access Key'},
-    'google':    {'name': 'Google / GCP',     'icon': '🔵', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
-    'facebook':  {'name': 'Facebook / Meta',  'icon': '👤', 'id_label': 'App ID',           'secret_label': 'App Secret'},
-    'twitter':   {'name': 'X / Twitter',      'icon': '🐦', 'id_label': 'API Key',          'secret_label': 'API Secret'},
-    'discord':   {'name': 'Discord',          'icon': '🎮', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
-    'shopify':   {'name': 'Shopify',          'icon': '🛍️',  'id_label': 'API Key',          'secret_label': 'API Secret Key'},
-    'hubspot':   {'name': 'HubSpot',          'icon': '🔶', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
-    'zapier':    {'name': 'Zapier',           'icon': '⚡', 'id_label': 'Client ID',        'secret_label': 'Client Secret'},
-    'custom':    {'name': 'Custom / Other',   'icon': '🔐', 'id_label': 'Client ID / Key',  'secret_label': 'Secret / Token'},
+    'stripe':   {'name': 'Stripe',          'icon': '💳',
+                 'fields': [
+                   {'label': 'Publishable Key',   'placeholder': 'pk_live_...',   'fname': 'client_id',     'type': 'text'},
+                   {'label': 'Secret Key',         'placeholder': 'sk_live_...',   'fname': 'client_secret', 'type': 'password'},
+                   {'label': 'Webhook Secret (optional)', 'placeholder': 'whsec_...', 'fname': 'extra1',    'type': 'password'},
+                 ]},
+    'paypal':   {'name': 'PayPal',          'icon': '🅿️',
+                 'fields': [
+                   {'label': 'Client ID',          'placeholder': 'AaB...',        'fname': 'client_id',     'type': 'text'},
+                   {'label': 'Client Secret',       'placeholder': 'EkF...',        'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'twilio':   {'name': 'Twilio',          'icon': '📞',
+                 'fields': [
+                   {'label': 'Account SID',         'placeholder': 'AC...',         'fname': 'client_id',     'type': 'text'},
+                   {'label': 'Auth Token',           'placeholder': 'your auth token', 'fname': 'client_secret','type': 'password'},
+                   {'label': 'Phone Number (optional)', 'placeholder': '+1 555 000 0000', 'fname': 'extra1',  'type': 'text'},
+                 ]},
+    'square':   {'name': 'Square',          'icon': '⬛',
+                 'fields': [
+                   {'label': 'Application ID',      'placeholder': 'sq0idp-...',    'fname': 'client_id',     'type': 'text'},
+                   {'label': 'Access Token',         'placeholder': 'EAAAl...',      'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'sendgrid': {'name': 'SendGrid',        'icon': '📧',
+                 'fields': [
+                   {'label': 'API Key',              'placeholder': 'SG.xxxxxx...',  'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'mailgun':  {'name': 'Mailgun',         'icon': '📬',
+                 'fields': [
+                   {'label': 'Domain',               'placeholder': 'mg.yourdomain.com', 'fname': 'client_id', 'type': 'text'},
+                   {'label': 'API Key',               'placeholder': 'key-...',       'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'aws':      {'name': 'AWS',             'icon': '☁️',
+                 'fields': [
+                   {'label': 'Access Key ID',         'placeholder': 'AKIA...',       'fname': 'client_id',     'type': 'text'},
+                   {'label': 'Secret Access Key',      'placeholder': 'wJalr...',      'fname': 'client_secret', 'type': 'password'},
+                   {'label': 'Region',                 'placeholder': 'us-east-1',     'fname': 'extra1',        'type': 'text'},
+                 ]},
+    'google':   {'name': 'Google / GCP',   'icon': '🔵',
+                 'fields': [
+                   {'label': 'Client ID',             'placeholder': 'xxxx.apps.googleusercontent.com', 'fname': 'client_id', 'type': 'text'},
+                   {'label': 'Client Secret',          'placeholder': 'GOCSPX-...',    'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'facebook': {'name': 'Facebook / Meta','icon': '👤',
+                 'fields': [
+                   {'label': 'App ID',                'placeholder': '123456789...',  'fname': 'client_id',     'type': 'text'},
+                   {'label': 'App Secret',             'placeholder': 'abcdef...',     'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'twitter':  {'name': 'X / Twitter',    'icon': '🐦',
+                 'fields': [
+                   {'label': 'API Key (Consumer Key)','placeholder': 'xvz1evF...',    'fname': 'client_id',     'type': 'text'},
+                   {'label': 'API Secret',             'placeholder': 'L8qq9PZ...',    'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'discord':  {'name': 'Discord',        'icon': '🎮',
+                 'fields': [
+                   {'label': 'Client ID',             'placeholder': '123456789...',  'fname': 'client_id',     'type': 'text'},
+                   {'label': 'Client Secret',          'placeholder': 'abcDEF...',     'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'shopify':  {'name': 'Shopify',        'icon': '🛍️',
+                 'fields': [
+                   {'label': 'API Key',               'placeholder': 'shppa_...',     'fname': 'client_id',     'type': 'text'},
+                   {'label': 'API Secret Key',         'placeholder': 'shpss_...',     'fname': 'client_secret', 'type': 'password'},
+                 ]},
+    'hubspot':  {'name': 'HubSpot',        'icon': '🔶',
+                 'fields': [
+                   {'label': 'Client ID',             'placeholder': 'xxxxxxxx-xxxx-...', 'fname': 'client_id', 'type': 'text'},
+                   {'label': 'Client Secret',          'placeholder': 'xxxxxxxx-xxxx-...', 'fname': 'client_secret','type': 'password'},
+                 ]},
+    'zapier':   {'name': 'Zapier',         'icon': '⚡',
+                 'fields': [
+                   {'label': 'Client ID',             'placeholder': 'your client id', 'fname': 'client_id',   'type': 'text'},
+                   {'label': 'Client Secret',          'placeholder': 'your client secret', 'fname': 'client_secret','type': 'password'},
+                 ]},
+    'custom':   {'name': 'Custom / Other', 'icon': '🔐',
+                 'fields': [
+                   {'label': 'Key / Client ID',       'placeholder': 'your key or ID...', 'fname': 'client_id', 'type': 'text'},
+                   {'label': 'Secret / Token',         'placeholder': 'your secret...',    'fname': 'client_secret','type': 'password'},
+                 ]},
 }
+
+# Backwards-compat helpers (used in templates + pair add route)
+def _pair_id_label(p):   return p['fields'][0]['label']  if p.get('fields') else p.get('id_label','ID')
+def _pair_sec_label(p):  return p['fields'][1]['label']  if p.get('fields') and len(p['fields'])>1 else p.get('secret_label','Secret')
 
 def get_provider(key):
     # Check longer/more-specific prefixes first to avoid false matches
@@ -577,28 +645,40 @@ def add_key():
             client_secret = request.form.get('client_secret', '').strip()
             name          = request.form.get('name', '').strip()
 
-            if not client_id or not client_secret:
-                flash('Both Client ID and Secret are required', 'error')
+            pinfo = PAIR_PROVIDERS.get(pair_provider, PAIR_PROVIDERS['custom'])
+            fields = pinfo.get('fields', [])
+
+            # Collect submitted field values by fname
+            field_vals = {}
+            for fld in fields:
+                field_vals[fld['fname']] = request.form.get(fld['fname'], '').strip()
+
+            client_id     = field_vals.get('client_id', '')
+            client_secret = field_vals.get('client_secret', '')
+            extra1        = field_vals.get('extra1', '')
+
+            # Need at least one real value
+            first_required = fields[0]['fname'] if fields else 'client_id'
+            if not field_vals.get(first_required):
+                flash(f'{fields[0]["label"] if fields else "Key"} is required', 'error')
                 return redirect(url_for('add_key'))
 
-            pinfo = PAIR_PROVIDERS.get(pair_provider, PAIR_PROVIDERS['custom'])
             display_name = name or pinfo['name']
-            # Store a combined hash so uniqueness constraint still works
-            combined = f"{client_id}:{client_secret}"
-            key_hash   = hash_key(combined)
-            key_prefix = client_id[:16] + '...' if len(client_id) > 16 else client_id
+            combined     = f"{client_id}:{client_secret}:{extra1}"
+            key_hash     = hash_key(combined)
+            key_prefix   = (client_id or client_secret)[:16] + '...' if len(client_id or client_secret) > 16 else (client_id or client_secret)
 
             try:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute(
-                    'INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix, key_type, client_id, client_secret, pair_provider) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    'INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix, key_type, client_id, client_secret, pair_provider, app_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (session.get('user_id'), pair_provider, display_name, key_hash, key_prefix,
-                     'pair', client_id, client_secret, pair_provider)
+                     'pair', client_id, client_secret + ('|' + extra1 if extra1 else ''), pair_provider, '')
                 )
                 conn.commit()
                 conn.close()
-                flash(f'{pinfo["name"]} credentials saved!', 'success')
+                flash(f'{pinfo["name"]} credentials saved! 🔐', 'success')
             except sqlite3.IntegrityError:
                 flash('These credentials already exist', 'error')
             return redirect(url_for('dashboard'))

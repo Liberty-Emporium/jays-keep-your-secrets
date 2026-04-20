@@ -100,14 +100,19 @@
         <div class="provider-name">{{ key.name or key.provider }}</div>
         {% if key.key_type == 'pair' %}
           {% set pinfo = pair_providers.get(key.pair_provider, pair_providers.get('custom')) %}
+          {% set pfields = pinfo.fields if pinfo and pinfo.fields else [] %}
+          {% if key.client_id %}
           <div style="margin:6px 0 2px">
-            <div style="font-size:.72rem;opacity:.55;text-transform:uppercase;letter-spacing:.07em">{{ pinfo.id_label }}</div>
-            <div class="key-preview" style="font-size:.82rem">{{ key.client_id[:24] }}{% if key.client_id|length > 24 %}...{% endif %}</div>
+            <div style="font-size:.7rem;opacity:.5;text-transform:uppercase;letter-spacing:.07em">{{ pfields[0].label if pfields else 'Client ID' }}</div>
+            <div class="key-preview" style="font-size:.8rem">{{ key.client_id[:28] }}{% if key.client_id|length > 28 %}...{% endif %}</div>
           </div>
+          {% endif %}
+          {% if key.client_secret %}
           <div style="margin:4px 0 2px">
-            <div style="font-size:.72rem;opacity:.55;text-transform:uppercase;letter-spacing:.07em">{{ pinfo.secret_label }}</div>
-            <div class="key-preview" style="font-size:.82rem">{{ key.client_secret[:8] }}••••••••••••</div>
+            <div style="font-size:.7rem;opacity:.5;text-transform:uppercase;letter-spacing:.07em">{{ pfields[1].label if pfields|length > 1 else 'Secret' }}</div>
+            <div class="key-preview" style="font-size:.8rem">{{ key.client_secret[:6] }}••••••••••</div>
           </div>
+          {% endif %}
         {% else %}
           <div class="key-preview">{{ key.key_prefix }}</div>
         {% endif %}

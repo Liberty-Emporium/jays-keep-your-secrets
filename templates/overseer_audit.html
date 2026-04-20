@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — Overseer{% endblock %}
+{% block extra_css %}
+.audit-wrap { max-width: 1000px; margin: 0 auto; padding: 2rem 1rem; }
+.audit-title { font-size: 1.4rem; font-weight: 700; margin-bottom: .5rem; }
+.audit-sub { color: rgba(255,255,255,.5); font-size: .88rem; margin-bottom: 1.5rem; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.audit-table th { text-align: left; padding: 8px 12px; background: rgba(255,255,255,.06); color: rgba(255,255,255,.6); text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; border-bottom: 1px solid rgba(255,255,255,.1); }
+.audit-table td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
+.audit-table tr:hover td { background: rgba(255,255,255,.03); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: .72rem; font-weight: 600; }
+.badge-ok  { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.2); }
+.badge-warn { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.2); }
+.badge-danger { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.2); }
+.badge-info { background: rgba(99,102,241,.15); color: #a78bfa; border: 1px solid rgba(99,102,241,.2); }
+{% endblock %}
+{% block content %}
+<div class="audit-wrap">
+  <div class="audit-title">🔍 Audit Log</div>
+  <div class="audit-sub">Last 200 security events — all logins, key changes, and admin actions</div>
+  <div style="margin-bottom:1rem">
+    <a href="/overseer" class="btn btn-secondary" style="font-size:.82rem">← Back to Overseer</a>
+  </div>
+  {% if logs %}
+  <table class="audit-table">
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>User</th>
+        <th>Action</th>
+        <th>Detail</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td style="white-space:nowrap;color:rgba(255,255,255,.5)">{{ log.created_at[:19] }}</td>
+        <td>{{ log.username or '—' }}</td>
+        <td>
+          {% set a = log.action %}
+          {% if 'success' in a %}
+            <span class="badge badge-ok">{{ a }}</span>
+          {% elif 'failed' in a or 'locked' in a or 'rate_limited' in a %}
+            <span class="badge badge-danger">{{ a }}</span>
+          {% elif 'deleted' in a or 'suspended' in a %}
+            <span class="badge badge-warn">{{ a }}</span>
+          {% else %}
+            <span class="badge badge-info">{{ a }}</span>
+          {% endif %}
+        </td>
+        <td style="color:rgba(255,255,255,.6)">{{ log.detail or '' }}</td>
+        <td style="font-family:monospace;font-size:.76rem;color:rgba(255,255,255,.4)">{{ log.ip or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="text-align:center;padding:3rem;opacity:.5">No audit events yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

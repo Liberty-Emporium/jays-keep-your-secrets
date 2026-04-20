@@ -107,9 +107,9 @@ def _is_rate_limited(db, key, max_calls=5, window_seconds=60):
 app = Flask(__name__)
 
 # Session security hardening
-app.config['SESSION_COOKIE_SECURE'] = False  # Set True when HTTPS confirmed
+app.config['SESSION_COOKIE_SECURE'] = True   # Railway always serves HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 def _get_secret_key():
     env_key = os.environ.get('SECRET_KEY')
@@ -154,7 +154,10 @@ app.jinja_env.globals['csrf_token'] = _get_csrf_token
 # Config
 ADMIN_USER     = os.environ.get('ADMIN_USER', 'emporiumandthrift@gmail.com')
 ADMIN_EMAIL    = os.environ.get('ADMIN_EMAIL', 'emporiumandthrift@gmail.com')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Treetop121570!')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
+if not ADMIN_PASSWORD:
+    import warnings
+    warnings.warn("ADMIN_PASSWORD env var not set — admin login disabled until configured")
 DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 
 # Database — use /data volume if available, fallback to local
@@ -258,10 +261,25 @@ def init_db():
                      ('demo', 'demo@demo.com', hashlib.sha256('demo123'.encode()).hexdigest(), 'demo', 0))
     
     # Add new columns if they don't exist (safe migrations)
+    # Audit log table
+    c.execute('''CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT,
+        action TEXT NOT NULL,
+        detail TEXT,
+        ip TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     migrations = [
         "ALTER TABLE users ADD COLUMN suspended INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN admin_note TEXT DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN last_login TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN failed_logins INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN locked_until TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN last_ip TEXT",
         # API key enhancements
         "ALTER TABLE api_keys ADD COLUMN app_names TEXT DEFAULT ''",
         "ALTER TABLE api_keys ADD COLUMN ai_model TEXT DEFAULT ''",
@@ -286,24 +304,32 @@ init_db()
 # Security headers
 
 @app.after_request
-def _add_security_headers(response):
-    """Security headers on every response."""
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    if 'Content-Security-Policy' not in response.headers:
-        response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:;"
-    return response
-
-@app.after_request
 def add_security_headers(response):
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    """Bank-grade security headers on every response."""
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "base-uri 'self';"
+    )
+    response.headers['Content-Security-Policy']       = csp
+    response.headers['X-Content-Type-Options']        = 'nosniff'
+    response.headers['X-Frame-Options']               = 'DENY'
+    response.headers['X-XSS-Protection']              = '1; mode=block'
+    response.headers['Strict-Transport-Security']     = 'max-age=63072000; includeSubDomains; preload'
+    response.headers['Referrer-Policy']               = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy']            = 'geolocation=(), microphone=(), camera=()'
+    response.headers['Cache-Control']                 = 'no-store, no-cache, must-revalidate, private'
+    response.headers['Pragma']                        = 'no-cache'
+    response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
+    # Remove fingerprinting headers
+    response.headers.pop('Server', None)
+    response.headers.pop('X-Powered-By', None)
     return response
 
 # Rate limiting
@@ -429,6 +455,109 @@ PAIR_PROVIDERS = {
 def _pair_id_label(p):   return p['fields'][0]['label']  if p.get('fields') else p.get('id_label','ID')
 def _pair_sec_label(p):  return p['fields'][1]['label']  if p.get('fields') and len(p['fields'])>1 else p.get('secret_label','Secret')
 
+# ── Encryption helpers (Fernet / AES-128-CBC) for secrets at rest ──────────────
+def _get_fernet():
+    """Return a Fernet instance keyed from FERNET_KEY env var (or generate + persist)."""
+    import base64
+    from cryptography.fernet import Fernet
+    env_key = os.environ.get('FERNET_KEY', '')
+    if env_key:
+        try:
+            return Fernet(env_key.encode() if isinstance(env_key, str) else env_key)
+        except Exception:
+            pass
+    # Fallback: persist to /data/fernet.key (survives redeploys on Railway volume)
+    import pathlib
+    kf = pathlib.Path('/data/fernet.key')
+    try:
+        kf.parent.mkdir(parents=True, exist_ok=True)
+        if kf.exists():
+            raw = kf.read_bytes().strip()
+            if raw: return Fernet(raw)
+        raw = Fernet.generate_key()
+        kf.write_bytes(raw)
+        return Fernet(raw)
+    except Exception:
+        # Last resort: deterministic key from SECRET_KEY (not ideal but safe fallback)
+        import hashlib, base64
+        seed = (app.secret_key or 'fallback').encode()
+        derived = base64.urlsafe_b64encode(hashlib.sha256(seed).digest())
+        return Fernet(derived)
+
+def encrypt_secret(plaintext: str) -> str:
+    """Encrypt a secret string. Returns 'enc:' prefixed base64 ciphertext."""
+    if not plaintext or plaintext.startswith('enc:'):
+        return plaintext
+    return 'enc:' + _get_fernet().encrypt(plaintext.encode()).decode()
+
+def decrypt_secret(ciphertext: str) -> str:
+    """Decrypt an encrypted secret. Handles plain (legacy) and enc: prefixed."""
+    if not ciphertext:
+        return ''
+    if not ciphertext.startswith('enc:'):
+        return ciphertext  # legacy plaintext
+    try:
+        return _get_fernet().decrypt(ciphertext[4:].encode()).decode()
+    except Exception:
+        return '[decryption failed]'
+
+# ── Audit log helper ─────────────────────────────────────────────────────────
+def audit(action: str, detail: str = '', user_id=None, username=None):
+    """Write an audit log entry (non-fatal — errors are swallowed)."""
+    try:
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+        ua = request.headers.get('User-Agent', '')[:200]
+        uid  = user_id  or session.get('user_id')
+        uname = username or session.get('username', 'anonymous')
+        conn = get_db()
+        conn.execute(
+            'INSERT INTO audit_log (user_id, username, action, detail, ip, user_agent) VALUES (?,?,?,?,?,?)',
+            (uid, uname, action, detail[:500], ip, ua)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+# ── Account lockout (persistent, DB-backed) ──────────────────────────────────
+MAX_FAILED_LOGINS = 5
+LOCKOUT_MINUTES   = 15
+
+def _check_lockout(conn, username_or_email):
+    """Returns (is_locked, user_row). is_locked=True means deny login."""
+    import datetime
+    user = conn.execute(
+        'SELECT * FROM users WHERE username=? OR email=?',
+        (username_or_email, username_or_email)
+    ).fetchone()
+    if not user:
+        return False, None
+    locked_until = user['locked_until']
+    if locked_until:
+        try:
+            lu = datetime.datetime.fromisoformat(locked_until)
+            if datetime.datetime.utcnow() < lu:
+                return True, user
+        except Exception:
+            pass
+    return False, user
+
+def _record_failed_login(conn, user_id):
+    """Increment failed_logins; lock account if threshold exceeded."""
+    import datetime
+    conn.execute('UPDATE users SET failed_logins = COALESCE(failed_logins,0)+1 WHERE id=?', (user_id,))
+    row = conn.execute('SELECT failed_logins FROM users WHERE id=?', (user_id,)).fetchone()
+    if row and row['failed_logins'] >= MAX_FAILED_LOGINS:
+        until = (datetime.datetime.utcnow() + datetime.timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
+        conn.execute('UPDATE users SET locked_until=? WHERE id=?', (until, user_id))
+    conn.commit()
+
+def _clear_failed_logins(conn, user_id, ip=''):
+    """Reset counters on successful login; record last_ip."""
+    conn.execute('UPDATE users SET failed_logins=0, locked_until=NULL, last_login=CURRENT_TIMESTAMP, last_ip=? WHERE id=?', (ip, user_id))
+    conn.commit()
+
+
 def get_provider(key):
     # Check longer/more-specific prefixes first to avoid false matches
     sorted_providers = sorted(PROVIDERS.items(), key=lambda x: -len(x[1]['prefix']))
@@ -528,26 +657,36 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+
         conn = get_db()
         conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute('SELECT * FROM users WHERE username = ?', (username,))
-        user = c.fetchone()
-        conn.close()
-        
+
+        # Check persistent DB lockout
+        is_locked, user = _check_lockout(conn, username)
+        if is_locked:
+            conn.close()
+            audit('login_locked', f'username={username}', username=username)
+            flash(f'Account locked after too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.', 'error')
+            return render_template('login.html', demo_mode=DEMO_MODE)
+
         if user and _verify_password(password, user['password_hash']):
-            # Check if account is suspended
             if user['suspended'] if 'suspended' in user.keys() else False:
+                conn.close()
+                audit('login_suspended', f'username={username}')
                 flash('This account has been suspended. Contact support.', 'error')
                 return render_template('login.html', demo_mode=DEMO_MODE)
-            # Auto-upgrade legacy sha256 hash to bcrypt on login
+
+            # Auto-upgrade legacy sha256 → bcrypt
             if _needs_upgrade(user['password_hash']):
-                _ug = get_db()
-                _ug.execute('UPDATE users SET password_hash=? WHERE id=?',
-                            (_hash_password(password), user['id']))
-                _ug.commit(); _ug.close()
-            # Secure session — clear first prevents session fixation attacks
+                conn.execute('UPDATE users SET password_hash=? WHERE id=?',
+                             (_hash_password(password), user['id']))
+                conn.commit()
+
+            _clear_failed_logins(conn, user['id'], ip=ip)
+            conn.close()
+
+            # Session fixation prevention
             session.clear()
             session.permanent = True
             session['logged_in'] = True
@@ -556,16 +695,29 @@ def login():
             session['plan'] = user['plan']
             session['is_admin'] = bool(user['is_admin'])
             session['csrf_token'] = secrets.token_hex(32)
-            # Update last_login timestamp
-            _ll = get_db()
-            _ll.execute('UPDATE users SET last_login=? WHERE id=?',
-                        (datetime.datetime.utcnow().isoformat(), user['id']))
-            _ll.commit(); _ll.close()
+            session['login_time'] = int(__import__('time').time())
+            session['login_ip'] = ip
+
+            audit('login_success', f'plan={user["plan"]}', user_id=user['id'], username=user['username'])
             flash('Welcome back!', 'success')
             return redirect(url_for('dashboard'))
         else:
-            flash('Invalid credentials', 'error')
-    
+            if user:
+                _record_failed_login(conn, user['id'])
+                row = conn.execute('SELECT failed_logins FROM users WHERE id=?', (user['id'],)).fetchone()
+                remaining = max(0, MAX_FAILED_LOGINS - (row['failed_logins'] if row else 0))
+                audit('login_failed', f'username={username}', username=username)
+                if remaining <= 0:
+                    flash(f'Account locked after {MAX_FAILED_LOGINS} failed attempts. Try again in {LOCKOUT_MINUTES} minutes.', 'error')
+                else:
+                    flash(f'Invalid credentials. {remaining} attempt{"s" if remaining != 1 else ""} remaining before lockout.', 'error')
+            else:
+                # Constant-time dummy hash to prevent user enumeration timing
+                _hash_password('_timing_equalization_')
+                audit('login_failed', f'username={username} (unknown)', username=username)
+                flash('Invalid credentials.', 'error')
+            conn.close()
+
     return render_template('login.html', demo_mode=DEMO_MODE)
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -671,13 +823,15 @@ def add_key():
             try:
                 conn = get_db()
                 c = conn.cursor()
+                enc_secret = encrypt_secret(client_secret + ('|' + extra1 if extra1 else ''))
                 c.execute(
                     'INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix, key_type, client_id, client_secret, pair_provider, app_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (session.get('user_id'), pair_provider, display_name, key_hash, key_prefix,
-                     'pair', client_id, client_secret + ('|' + extra1 if extra1 else ''), pair_provider, '')
+                     'pair', client_id, enc_secret, pair_provider, '')
                 )
                 conn.commit()
                 conn.close()
+                audit('key_pair_added', f'provider={pair_provider}')
                 flash(f'{pinfo["name"]} credentials saved! 🔐', 'success')
             except sqlite3.IntegrityError:
                 flash('These credentials already exist', 'error')
@@ -702,6 +856,7 @@ def add_key():
                          (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
                 conn.commit()
                 conn.close()
+                audit('key_added', 'provider=' + str(provider))
                 flash('API key added!', 'success')
             except sqlite3.IntegrityError:
                 flash('This key already exists', 'error')
@@ -719,6 +874,7 @@ def delete_key(key_id):
     c.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?', (key_id, session.get('user_id')))
     conn.commit()
     conn.close()
+    audit('key_deleted', 'key_id=' + str(key_id))
     flash('API key deleted', 'success')
     return redirect(url_for('dashboard'))
 
@@ -1708,15 +1864,49 @@ def overseer_login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+
+        # Strict rate limit for admin — 3 attempts per 5 min
+        if _is_rate_limited(get_db(), f'overseer:{ip}', max_calls=3, window_seconds=300):
+            audit('overseer_rate_limited', f'ip={ip}', username=username)
+            flash('Too many admin login attempts. Try again in 5 minutes.', 'error')
+            return render_template('overseer_login.html')
+
         conn = get_db()
         conn.row_factory = sqlite3.Row
-        user = conn.execute('SELECT * FROM users WHERE username=? AND is_admin=1', (username,)).fetchone()
-        conn.close()
+
+        is_locked, user = _check_lockout(conn, username)
+        if is_locked:
+            conn.close()
+            audit('overseer_login_locked', f'username={username}', username=username)
+            flash(f'Account locked. Try again in {LOCKOUT_MINUTES} minutes.', 'error')
+            return render_template('overseer_login.html')
+
+        user = conn.execute('SELECT * FROM users WHERE (username=? OR email=?) AND is_admin=1', (username, username)).fetchone()
         if user and _verify_password(password, user['password_hash']):
+            _clear_failed_logins(conn, user['id'], ip=ip)
+            conn.close()
+            # Full session rotation on admin login
+            session.clear()
+            session.permanent = True
+            session['logged_in'] = True
             session['is_admin'] = True
-            session['admin_user'] = username
+            session['admin_user'] = user['username']
+            session['username'] = user['username']
+            session['user_id'] = user['id']
+            session['csrf_token'] = secrets.token_hex(32)
+            session['login_time'] = int(__import__('time').time())
+            session['login_ip'] = ip
+            audit('overseer_login_success', f'ip={ip}', user_id=user['id'], username=user['username'])
             return redirect(url_for('overseer'))
-        flash('Invalid admin credentials.', 'error')
+        else:
+            if user:
+                _record_failed_login(conn, user['id'])
+            conn.close()
+            _hash_password('_timing_equalization_')  # constant-time
+            audit('overseer_login_failed', f'username={username} ip={ip}', username=username)
+            flash('Invalid admin credentials.', 'error')
+
     return render_template('overseer_login.html')
 
 @app.route('/overseer/logout')
@@ -1753,6 +1943,19 @@ def overseer():
                            free=total-paid, mrr=mrr, search=search,
                            signups_30d=signups_30d)
 
+
+@app.route('/overseer/audit')
+@login_required
+def overseer_audit():
+    if not session.get('is_admin'):
+        return redirect(url_for('overseer_login'))
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    logs = conn.execute(
+        'SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200'
+    ).fetchall()
+    conn.close()
+    return render_template('overseer_audit.html', logs=logs)
 
 @app.route('/overseer/user/<int:user_id>/upgrade', methods=['POST'])
 @admin_required

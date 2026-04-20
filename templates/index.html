@@ -110,12 +110,16 @@
           {% if key.client_secret %}
           <div style="margin:4px 0 2px">
             <div style="font-size:.7rem;opacity:.5;text-transform:uppercase;letter-spacing:.07em">{{ pfields[1].label if pfields|length > 1 else 'Secret' }}</div>
-            <div class="key-preview" style="font-size:.8rem">{{ key.client_secret[:6] }}••••••••••</div>
+            <div class="key-preview" style="font-size:.8rem" id="kv-{{ key.id }}">{{ key.client_secret[:6] }}••••••••••</div>
           </div>
           {% endif %}
         {% else %}
-          <div class="key-preview">{{ key.key_prefix }}</div>
+          <div class="key-preview" id="kv-{{ key.id }}">{{ key.key_prefix }}</div>
         {% endif %}
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button onclick="revealKey({{ key.id }}, this)" style="font-size:.75rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#e2e8f0;cursor:pointer">👁 Reveal</button>
+          <button onclick="copyKey({{ key.id }}, this)" style="font-size:.75rem;padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#e2e8f0;cursor:pointer">📋 Copy</button>
+        </div>
         <small style="opacity: 0.6;">Added: {{ key.created_at[:10] }}</small>
 
         {% if key.ai_model %}
@@ -198,4 +202,41 @@
                     <a href="/add" class="btn" style="margin-top: 1rem;">Add Your First Key</a>
 </div>
 {% endif %}
+
+<script>
+async function revealKey(id, btn) {
+  const el = document.getElementById('kv-' + id);
+  if (btn.dataset.revealed) {
+    el.textContent = btn.dataset.preview;
+    btn.textContent = '👁 Reveal';
+    delete btn.dataset.revealed;
+    return;
+  }
+  btn.textContent = '...';
+  const r = await fetch('/key/' + id + '/reveal');
+  const d = await r.json();
+  if (d.ok) {
+    btn.dataset.preview = el.textContent;
+    btn.dataset.revealed = '1';
+    if (d.type === 'pair') {
+      el.textContent = (d.client_id ? 'ID: ' + d.client_id + ' | ' : '') + 'Secret: ' + d.secret;
+    } else {
+      el.textContent = d.value || '(empty)';
+    }
+    btn.textContent = '🚫 Hide';
+  } else {
+    btn.textContent = '❌ Error';
+  }
+}
+async function copyKey(id, btn) {
+  const r = await fetch('/key/' + id + '/reveal');
+  const d = await r.json();
+  if (d.ok) {
+    const val = d.type === 'pair' ? d.secret : d.value;
+    await navigator.clipboard.writeText(val || '');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+  }
+}
+</script>
 {% endblock %}

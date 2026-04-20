@@ -2004,11 +2004,32 @@ def copy_key(key_id):
     c.execute('SELECT key_hash FROM api_keys WHERE id = ? AND user_id = ?', (key_id, session.get('user_id')))
     key = c.fetchone()
     conn.close()
-    
-    # Return the hash for verification (actual key would need more secure handling)
     if key:
         return jsonify({'success': True, 'key_hash': key['key_hash'][:8]})
     return jsonify({'success': False}), 404
+
+@app.route('/key/<int:key_id>/reveal')
+@login_required
+def reveal_key(key_id):
+    """Reveal the full decrypted key value for a key owned by the logged-in user."""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        'SELECT * FROM api_keys WHERE id=? AND user_id=?',
+        (key_id, session.get('user_id'))
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    audit('reveal_key', f'key_id={key_id} name={row["name"]}', user_id=session.get('user_id'))
+    if row['key_type'] == 'pair':
+        secret = decrypt_secret(row['client_secret'] or '')
+        return jsonify({'ok': True, 'type': 'pair',
+                        'client_id': row['client_id'] or '',
+                        'secret': secret})
+    else:
+        value = decrypt_secret(row['key_value'] or '')
+        return jsonify({'ok': True, 'type': 'single', 'value': value})
 
 @app.route('/status')
 @login_required

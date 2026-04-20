@@ -112,7 +112,7 @@ app = Flask(__name__)
 app.config['SESSION_COOKIE_SECURE'] = True   # Railway always serves HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
+app.config['PERMANENT_SESSION_LIFETIME'] = 60 * 60 * 24 * 30  # 30 days (when Remember Me checked)
 def _get_secret_key():
     env_key = os.environ.get('SECRET_KEY')
     if env_key:
@@ -671,6 +671,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        remember = request.form.get('remember') == '1'
         ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
 
         conn = get_db()
@@ -702,7 +703,10 @@ def login():
 
             # Session fixation prevention
             session.clear()
-            session.permanent = True
+            session.permanent = remember  # 30 days if remember, else browser session
+            if remember:
+                from datetime import timedelta
+                app.permanent_session_lifetime = timedelta(days=30)
             session['logged_in'] = True
             session['username'] = user['username']
             session['user_id'] = user['id']
@@ -712,7 +716,7 @@ def login():
             session['login_time'] = int(__import__('time').time())
             session['login_ip'] = ip
 
-            audit('login_success', f'plan={user["plan"]}', user_id=user['id'], username=user['username'])
+            audit('login_success', f'plan={user["plan"]} remember={remember}', user_id=user['id'], username=user['username'])
             flash('Welcome back!', 'success')
             return redirect(url_for('dashboard'))
         else:

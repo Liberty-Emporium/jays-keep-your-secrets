@@ -17,7 +17,12 @@
         <label>Password</label>
         <input type="password" name="password" required>
       </div>
-      <button type="submit" class="btn btn-primary btn-full" style="margin-top:4px">Sign In</button>
+      <div style="display:flex;align-items:center;gap:8px;margin:12px 0">
+        <input type="checkbox" name="remember" id="remember" value="1"
+               style="width:auto;accent-color:var(--brand);cursor:pointer">
+        <label for="remember" style="font-size:.88rem;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400">Keep me logged in for 30 days</label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Sign In</button>
     </form>
 
     <div style="margin-top:16px;text-align:center;font-size:0.85rem;color:var(--text-muted)">

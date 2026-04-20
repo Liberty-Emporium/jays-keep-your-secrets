@@ -248,9 +248,9 @@ def init_db():
         admin_hash = _hash_password(ADMIN_PASSWORD)
         if not admin_row:
             c.execute("INSERT INTO users (username, email, password_hash, plan, is_admin) VALUES (?, ?, ?, ?, ?)",
-                      (ADMIN_USER, ADMIN_EMAIL, admin_hash, 'pro', 1))
+                      (ADMIN_USER, ADMIN_EMAIL, admin_hash, 'owner', 1))
         else:
-            c.execute("UPDATE users SET username=?, email=?, password_hash=? WHERE is_admin=1",
+            c.execute("UPDATE users SET username=?, email=?, password_hash=?, plan='owner' WHERE is_admin=1",
                       (ADMIN_USER, ADMIN_EMAIL, admin_hash))
         conn.commit()
     # Create admin user (persists across deploys)
@@ -1937,7 +1937,7 @@ def overseer():
     ).fetchone()['c']
     conn.close()
     total = len(users)
-    paid  = sum(1 for u in users if u['plan'] in ('pro','enterprise'))
+    paid  = sum(1 for u in users if u['plan'] in ('pro','enterprise') and not u['is_admin'])
     mrr   = paid * 14.99
     return render_template('overseer.html', users=users, total=total, paid=paid,
                            free=total-paid, mrr=mrr, search=search,
@@ -1953,7 +1953,7 @@ def admin_unlock():
         return jsonify({'error': 'forbidden'}), 403
     conn = get_db()
     conn = get_db()
-    conn.execute('UPDATE users SET failed_logins=0, locked_until=NULL WHERE is_admin=1')
+    conn.execute("UPDATE users SET failed_logins=0, locked_until=NULL, plan='owner' WHERE is_admin=1")
     # Also sync admin credentials from constants (in case DB has stale hash)
     if ADMIN_PASSWORD:
         admin_hash = _hash_password(ADMIN_PASSWORD)
@@ -1980,7 +1980,7 @@ def overseer_audit():
 @admin_required
 def overseer_upgrade(user_id):
     plan = request.form.get('plan', 'pro')
-    if plan not in ('free','pro','enterprise','demo'):
+    if plan not in ('free','pro','enterprise','demo','owner'):
         plan = 'pro'
     conn = get_db()
     conn.execute('UPDATE users SET plan=? WHERE id=?', (plan, user_id))

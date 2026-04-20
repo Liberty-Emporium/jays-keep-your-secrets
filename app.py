@@ -1944,6 +1944,21 @@ def overseer():
                            signups_30d=signups_30d)
 
 
+@app.route('/admin-unlock', methods=['POST'])
+def admin_unlock():
+    """Emergency account unlock. Only active when UNLOCK_SECRET env var is set."""
+    unlock_secret = os.environ.get('UNLOCK_SECRET', '')
+    if not unlock_secret:
+        return '', 404
+    provided = request.form.get('secret', '') or (request.get_json() or {}).get('secret', '')
+    if provided != unlock_secret:
+        return jsonify({'error': 'forbidden'}), 403
+    conn = get_db()
+    conn.execute('UPDATE users SET failed_logins=0, locked_until=NULL WHERE is_admin=1')
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'msg': 'Admin account unlocked'})
+
 @app.route('/overseer/audit')
 @login_required
 def overseer_audit():

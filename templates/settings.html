@@ -201,5 +201,147 @@ function copyToken() {
     setTimeout(() => btn.textContent = '📋 Copy', 2000);
   });
 }
+
+// ── App Tokens (inter-app communication) ──
+let _appTokens = [];
+
+async function loadAppTokens() {
+  try {
+    const r = await fetch('/api/app-tokens', {credentials:'same-origin'});
+    const d = await r.json();
+    _appTokens = d.tokens || [];
+    renderAppTokens();
+  } catch(e) {}
+}
+
+function renderAppTokens() {
+  const el = document.getElementById('app-tokens-list');
+  if (!el) return;
+  if (!_appTokens.length) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem;padding:12px 0">No app tokens yet. Create one for each app that needs to fetch keys.</div>';
+    return;
+  }
+  el.innerHTML = _appTokens.map(t => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <div style="font-weight:700;font-size:.88rem">${escH(t.app_name)}</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:2px">
+          Keys: <code style="background:var(--dark3);padding:1px 5px;border-radius:4px">${escH(t.allowed_keys)}</code>
+          &nbsp;·&nbsp; ${t.last_used ? 'Last used ' + t.last_used.slice(0,10) : 'Never used'}
+          &nbsp;·&nbsp; Expires ${t.expires_at ? t.expires_at.slice(0,10) : 'never'}
+        </div>
+      </div>
+      <span class="badge ${t.active ? 'badge-green' : 'badge-gray'}">${t.active ? 'Active' : 'Revoked'}</span>
+      ${t.active ? `<button onclick="revokeAppToken(${t.id})" class="btn btn-outline btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.3)">Revoke</button>` : ''}
+    </div>
+  `).join('');
+}
+
+async function createAppToken() {
+  const name    = document.getElementById('new-app-name').value.trim();
+  const keys    = document.getElementById('new-app-keys').value.trim() || '*';
+  const expires = parseInt(document.getElementById('new-app-expires').value) || 365;
+  if (!name) { alert('App name is required'); return; }
+
+  const btn = document.getElementById('create-app-token-btn');
+  btn.disabled = true; btn.textContent = 'Creating...';
+
+  try {
+    const r = await fetch('/api/app-tokens', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': '{{ csrf_token() }}'},
+      body: JSON.stringify({app_name: name, allowed_keys: keys, expires_days: expires})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('new-token-reveal').style.display = 'block';
+      document.getElementById('new-token-value').value = d.token;
+      document.getElementById('new-app-name').value = '';
+      document.getElementById('new-app-keys').value = '';
+      await loadAppTokens();
+    } else {
+      alert(d.error || 'Failed to create token');
+    }
+  } catch(e) { alert('Error: ' + e.message); }
+  btn.disabled = false; btn.textContent = '+ Create App Token';
+}
+
+async function revokeAppToken(id) {
+  if (!confirm('Revoke this token? The app using it will lose access immediately.')) return;
+  const r = await fetch('/api/app-tokens/' + id, {
+    method: 'DELETE', credentials: 'same-origin',
+    headers: {'X-CSRF-Token': '{{ csrf_token() }}'}
+  });
+  const d = await r.json();
+  if (d.ok) { await loadAppTokens(); }
+}
+
+function copyAppToken() {
+  const v = document.getElementById('new-token-value').value;
+  navigator.clipboard.writeText(v).then(() => {
+    const b = document.getElementById('copy-new-token-btn');
+    b.textContent = '✅ Copied!'; setTimeout(() => b.textContent = '📋 Copy', 2000);
+  });
+}
+
+function escH(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+document.addEventListener('DOMContentLoaded', loadAppTokens);
 </script>
+
+<!-- ── App Tokens section (injected below API Token card) ── -->
+<style>
+#app-tokens-section { max-width:700px; margin: 0 auto 24px; }
+</style>
+<div id="app-tokens-section">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <strong style="font-size:1rem">🔗 App Tokens</strong>
+        <div style="color:var(--text-muted);font-size:.8rem;margin-top:2px">Give each of your apps its own token to fetch keys from KYS at runtime</div>
+      </div>
+    </div>
+
+    <!-- Existing tokens -->
+    <div id="app-tokens-list" style="margin-bottom:20px"></div>
+
+    <!-- Create new token -->
+    <div style="background:var(--dark3);border-radius:var(--radius);padding:16px">
+      <div style="font-weight:700;font-size:.88rem;margin-bottom:12px">Create New App Token</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:.75rem">App Name</label>
+          <input id="new-app-name" type="text" placeholder="Pet Vet AI" style="margin-top:4px">
+        </div>
+        <div>
+          <label style="font-size:.75rem">Allowed Keys <span style="font-weight:400;opacity:.6">(comma-separated, or * for all)</span></label>
+          <input id="new-app-keys" type="text" placeholder="openrouter,stripe" style="margin-top:4px">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:.75rem">Expires (days)</label>
+          <input id="new-app-expires" type="number" value="365" min="1" max="3650" style="margin-top:4px">
+        </div>
+        <button id="create-app-token-btn" onclick="createAppToken()" class="btn btn-primary btn-sm" style="margin-top:20px">+ Create App Token</button>
+      </div>
+
+      <!-- Token reveal (shown once after creation) -->
+      <div id="new-token-reveal" style="display:none;margin-top:16px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:14px">
+        <div style="font-weight:700;color:#34d399;margin-bottom:8px">⚠️ Copy this token now — it won't be shown again!</div>
+        <div style="display:flex;gap:8px">
+          <input id="new-token-value" type="text" readonly style="font-family:monospace;font-size:.82rem;background:var(--dark);flex:1">
+          <button id="copy-new-token-btn" onclick="copyAppToken()" class="btn btn-outline btn-sm">📋 Copy</button>
+        </div>
+        <div style="margin-top:10px;font-size:.8rem;color:var(--text-muted)">
+          <strong>In your app:</strong><br>
+          <code style="background:var(--dark);padding:4px 8px;border-radius:4px;display:block;margin-top:4px;font-size:.76rem">resp = requests.post("https://ai-api-tracker-production.up.railway.app/api/fetch-key", headers={"Authorization": "Bearer &lt;token&gt;"}, json={"key": "openrouter"})<br>api_key = resp.json()["value"]</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

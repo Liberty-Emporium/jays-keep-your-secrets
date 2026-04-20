@@ -229,6 +229,19 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users (id)
     )''')
 
+    # App Tokens table — per-app access tokens with key-access allowlists
+    c.execute('''CREATE TABLE IF NOT EXISTS app_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        app_name TEXT NOT NULL,
+        allowed_keys TEXT DEFAULT '*',
+        last_used TIMESTAMP,
+        expires_at TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     # Brain key table — encrypted brain password, admin-only
     c.execute('''CREATE TABLE IF NOT EXISTS brain_keys (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -288,6 +301,7 @@ def init_db():
         "ALTER TABLE api_keys ADD COLUMN client_id TEXT DEFAULT ''",
         "ALTER TABLE api_keys ADD COLUMN client_secret TEXT DEFAULT ''",
         "ALTER TABLE api_keys ADD COLUMN pair_provider TEXT DEFAULT ''",
+        "ALTER TABLE api_keys ADD COLUMN key_value TEXT DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -852,8 +866,9 @@ def add_key():
             try:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix) VALUES (?, ?, ?, ?, ?)',
-                         (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix))
+                enc_val = encrypt_secret(key)
+                c.execute('INSERT INTO api_keys (user_id, provider, name, key_hash, key_prefix, key_value) VALUES (?, ?, ?, ?, ?, ?)',
+                         (session.get('user_id'), provider, name or PROVIDERS.get(provider, {}).get('name', 'Unknown'), key_hash, key_prefix, enc_val))
                 conn.commit()
                 conn.close()
                 audit('key_added', 'provider=' + str(provider))
@@ -1346,6 +1361,193 @@ def api_delete_key(key_id):
     conn.close()
     
     return jsonify({'success': True, 'message': 'API key deleted'})
+
+# ============================================================
+# APP INTEGRATION API — The inter-app communication layer
+# Any Liberty-Emporium app can call these endpoints to fetch
+# its credentials from KYS at runtime.
+# ============================================================
+
+def _validate_app_token(raw_token):
+    """Validate an app token. Returns (user_id, allowed_keys_list) or (None, None)."""
+    if not raw_token or len(raw_token) < 16:
+        return None, None
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    try:
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            'SELECT user_id, allowed_keys, expires_at, active FROM app_tokens WHERE token_hash=?',
+            (token_hash,)
+        ).fetchone()
+        conn.close()
+        if not row or not row['active']:
+            return None, None
+        if row['expires_at']:
+            try:
+                exp = datetime.datetime.fromisoformat(row['expires_at'])
+                if datetime.datetime.utcnow() > exp:
+                    return None, None
+            except Exception:
+                pass
+        allowed = [k.strip() for k in (row['allowed_keys'] or '*').split(',')]
+        return row['user_id'], allowed
+    except Exception:
+        return None, None
+
+
+@app.route('/api/fetch-key', methods=['POST', 'GET'])
+@rate_limit
+def api_fetch_key():
+    """THE core endpoint — any app calls this to get a key by name.
+
+    Usage:
+        POST /api/fetch-key
+        Authorization: Bearer <app-token>
+        { "key": "openrouter" }        # by name (label)
+        { "key": "stripe_secret" }      # or whatever you named it
+
+    Returns:
+        { "ok": true, "value": "sk-or-...", "provider": "openrouter" }
+        or for pairs:
+        { "ok": true, "client_id": "pk_live_...", "secret": "sk_live_...", "provider": "stripe" }
+    """
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return jsonify({'ok': False, 'error': 'Authorization: Bearer <token> required'}), 401
+
+    raw_token = auth[7:].strip()
+    user_id, allowed_keys = _validate_app_token(raw_token)
+
+    # Also accept regular user API tokens (for Echo/admin use)
+    if not user_id:
+        user_id = validate_api_token(raw_token)
+        allowed_keys = ['*'] if user_id else None
+
+    if not user_id:
+        return jsonify({'ok': False, 'error': 'Invalid or expired token'}), 401
+
+    data = request.get_json() or {}
+    key_name = (data.get('key') or request.args.get('key') or '').strip().lower()
+    if not key_name:
+        return jsonify({'ok': False, 'error': '"key" field required — pass the key name/label'}), 400
+
+    # Check allowlist
+    if allowed_keys != ['*'] and key_name not in allowed_keys:
+        audit('fetch_key_denied', f'key={key_name} not in allowlist', user_id=user_id)
+        return jsonify({'ok': False, 'error': f'Token not permitted to access "{key_name}"'}), 403
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    # Search by name (case-insensitive) OR provider
+    row = conn.execute(
+        "SELECT * FROM api_keys WHERE user_id=? AND (LOWER(name)=? OR LOWER(provider)=?) ORDER BY created_at DESC LIMIT 1",
+        (user_id, key_name, key_name)
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'ok': False, 'error': f'No key found with name "{key_name}"'}), 404
+
+    # Update app_token last_used
+    try:
+        th = hashlib.sha256(raw_token.encode()).hexdigest()
+        db = get_db()
+        db.execute('UPDATE app_tokens SET last_used=CURRENT_TIMESTAMP WHERE token_hash=?', (th,))
+        db.commit()
+        db.close()
+    except Exception:
+        pass
+
+    audit('fetch_key_success', f'key={key_name} provider={row["provider"]}', user_id=user_id)
+
+    if row['key_type'] == 'pair':
+        secret_raw = decrypt_secret(row['client_secret'] or '')
+        # Strip extra1 if stored with | separator
+        secret_val = secret_raw.split('|')[0] if '|' in secret_raw else secret_raw
+        extra1     = secret_raw.split('|')[1] if '|' in secret_raw else ''
+        result = {
+            'ok': True,
+            'type': 'pair',
+            'provider': row['provider'],
+            'name': row['name'],
+            'client_id': row['client_id'] or '',
+            'secret': secret_val,
+        }
+        if extra1:
+            result['extra'] = extra1
+        return jsonify(result)
+    else:
+        value = decrypt_secret(row['key_value'] or '')
+        return jsonify({
+            'ok': True,
+            'type': 'single',
+            'provider': row['provider'],
+            'name': row['name'],
+            'value': value,
+        })
+
+
+@app.route('/api/app-tokens', methods=['GET'])
+@login_required
+def api_list_app_tokens():
+    """List all app tokens for the logged-in user."""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        'SELECT id, app_name, allowed_keys, last_used, expires_at, active, created_at FROM app_tokens WHERE user_id=? ORDER BY created_at DESC',
+        (session.get('user_id'),)
+    ).fetchall()
+    conn.close()
+    return jsonify({'ok': True, 'tokens': [dict(r) for r in rows]})
+
+
+@app.route('/api/app-tokens', methods=['POST'])
+@login_required
+def api_create_app_token():
+    """Create a new app token.
+    Body: { "app_name": "Pet Vet AI", "allowed_keys": "openrouter,stripe", "expires_days": 365 }
+    Returns the raw token ONCE — store it immediately.
+    """
+    data = request.get_json() or {}
+    app_name = data.get('app_name', '').strip()[:64]
+    if not app_name:
+        return jsonify({'ok': False, 'error': 'app_name required'}), 400
+
+    allowed_keys = data.get('allowed_keys', '*').strip() or '*'
+    expires_days = int(data.get('expires_days', 365))
+
+    raw = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw.encode()).hexdigest()
+    expires_at = (datetime.datetime.utcnow() + datetime.timedelta(days=expires_days)).isoformat()
+
+    conn = get_db()
+    conn.execute(
+        'INSERT INTO app_tokens (user_id, token_hash, app_name, allowed_keys, expires_at) VALUES (?,?,?,?,?)',
+        (session.get('user_id'), token_hash, app_name, allowed_keys, expires_at)
+    )
+    conn.commit()
+    conn.close()
+
+    audit('app_token_created', f'app={app_name} keys={allowed_keys}')
+    return jsonify({'ok': True, 'token': raw, 'app_name': app_name,
+                    'allowed_keys': allowed_keys, 'expires_at': expires_at,
+                    'warning': 'Save this token now — it will not be shown again.'}), 201
+
+
+@app.route('/api/app-tokens/<int:token_id>', methods=['DELETE'])
+@login_required
+def api_revoke_app_token(token_id):
+    """Revoke an app token."""
+    conn = get_db()
+    conn.execute('UPDATE app_tokens SET active=0 WHERE id=? AND user_id=?',
+                 (token_id, session.get('user_id')))
+    conn.commit()
+    conn.close()
+    audit('app_token_revoked', f'token_id={token_id}')
+    return jsonify({'ok': True})
+
 
 def validate_api_token(token):
     """Validate token against DB, check expiry, return user_id or None."""

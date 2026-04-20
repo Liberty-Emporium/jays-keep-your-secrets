@@ -77,7 +77,9 @@
           </td>
           <td style="color:var(--text-muted);font-size:0.85rem;">{{ u.email }}</td>
           <td>
-            {% if u.plan in ('pro','enterprise') %}
+            {% if u.plan == 'owner' %}
+              <span class="badge badge-brand">👑 Owner</span>
+            {% elif u.plan in ('pro','enterprise') %}
               <span class="badge badge-green">{{ u.plan|title }}</span>
             {% elif u.plan == 'demo' %}
               <span class="badge badge-brand">Demo</span>
@@ -103,6 +105,7 @@
               <!-- Change Plan -->
               <form method="POST" action="/overseer/user/{{ u.id }}/upgrade" style="display:flex;gap:4px;">
                 <select name="plan" style="padding:4px 8px;background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.8rem;">
+                  <option value="owner" {% if u.plan=='owner' %}selected{% endif %}>Owner</option>
                   <option value="free" {% if u.plan=='free' %}selected{% endif %}>Free</option>
                   <option value="pro" {% if u.plan=='pro' %}selected{% endif %}>Pro</option>
                   <option value="enterprise" {% if u.plan=='enterprise' %}selected{% endif %}>Enterprise</option>

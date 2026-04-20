@@ -203,6 +203,9 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
 <script>
 async function revealKey(id, btn) {
   const el = document.getElementById('kv-' + id);
@@ -213,30 +216,32 @@ async function revealKey(id, btn) {
     return;
   }
   btn.textContent = '...';
-  const r = await fetch('/key/' + id + '/reveal');
-  const d = await r.json();
-  if (d.ok) {
-    btn.dataset.preview = el.textContent;
-    btn.dataset.revealed = '1';
-    if (d.type === 'pair') {
-      el.textContent = (d.client_id ? 'ID: ' + d.client_id + ' | ' : '') + 'Secret: ' + d.secret;
+  try {
+    const r = await fetch('/key/' + id + '/reveal');
+    const d = await r.json();
+    if (d.ok) {
+      btn.dataset.preview = el.textContent;
+      btn.dataset.revealed = '1';
+      el.textContent = d.type === 'pair'
+        ? (d.client_id ? 'ID: ' + d.client_id + ' | Secret: ' : '') + (d.secret || '(empty)')
+        : (d.value || '(empty)');
+      btn.textContent = '🚫 Hide';
     } else {
-      el.textContent = d.value || '(empty)';
+      btn.textContent = '❌ ' + (d.error || 'Error');
     }
-    btn.textContent = '🚫 Hide';
-  } else {
-    btn.textContent = '❌ Error';
-  }
+  } catch(e) { btn.textContent = '❌ Failed'; }
 }
 async function copyKey(id, btn) {
-  const r = await fetch('/key/' + id + '/reveal');
-  const d = await r.json();
-  if (d.ok) {
-    const val = d.type === 'pair' ? d.secret : d.value;
-    await navigator.clipboard.writeText(val || '');
-    btn.textContent = '✅ Copied!';
-    setTimeout(() => btn.textContent = '📋 Copy', 2000);
-  }
+  try {
+    const r = await fetch('/key/' + id + '/reveal');
+    const d = await r.json();
+    if (d.ok) {
+      const val = d.type === 'pair' ? (d.secret || '') : (d.value || '');
+      await navigator.clipboard.writeText(val);
+      btn.textContent = '✅ Copied!';
+      setTimeout(() => btn.textContent = '📋 Copy', 2000);
+    }
+  } catch(e) { btn.textContent = '❌ Failed'; }
 }
 </script>
 {% endblock %}

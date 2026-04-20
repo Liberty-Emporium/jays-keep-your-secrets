@@ -2024,11 +2024,15 @@ def reveal_key(key_id):
     audit('reveal_key', f'key_id={key_id} name={row["name"]}', user_id=session.get('user_id'))
     if row['key_type'] == 'pair':
         secret = decrypt_secret(row['client_secret'] or '')
+        # strip extra stored after |
+        secret = secret.split('|')[0] if '|' in secret else secret
         return jsonify({'ok': True, 'type': 'pair',
                         'client_id': row['client_id'] or '',
                         'secret': secret})
     else:
-        value = decrypt_secret(row['key_value'] or '')
+        # key_value is primary, fall back to client_secret for legacy single keys
+        raw = row['key_value'] or row['client_secret'] or ''
+        value = decrypt_secret(raw)
         return jsonify({'ok': True, 'type': 'single', 'value': value})
 
 @app.route('/status')

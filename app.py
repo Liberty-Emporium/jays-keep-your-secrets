@@ -33,6 +33,8 @@ def _get_pepper():
 
 def _hash_password(password):
     """Hash password with bcrypt + pepper. Falls back to sha256."""
+    if not password:
+        return hashlib.sha256(b'').hexdigest()  # empty → deterministic placeholder
     peppered = _get_pepper() + password
     if _BCRYPT_OK:
         h = _bcrypt.hashpw(peppered.encode('utf-8'), _bcrypt.gensalt(rounds=12))
@@ -154,10 +156,7 @@ app.jinja_env.globals['csrf_token'] = _get_csrf_token
 # Config
 ADMIN_USER     = os.environ.get('ADMIN_USER', 'emporiumandthrift@gmail.com')
 ADMIN_EMAIL    = os.environ.get('ADMIN_EMAIL', 'emporiumandthrift@gmail.com')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
-if not ADMIN_PASSWORD:
-    import warnings
-    warnings.warn("ADMIN_PASSWORD env var not set — admin login disabled until configured")
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Treetop121570!')  # Set ADMIN_PASSWORD env var in Railway to override
 DEMO_MODE = os.environ.get('DEMO_MODE', 'true').lower() == 'true'
 
 # Database — use /data volume if available, fallback to local
@@ -242,17 +241,18 @@ def init_db():
 
     conn.commit()
     
-    # Upsert admin user — keeps username/email/password in sync with constants
-    c.execute("SELECT id FROM users WHERE is_admin=1")
-    admin_row = c.fetchone()
-    admin_hash = _hash_password(ADMIN_PASSWORD)
-    if not admin_row:
-        c.execute("INSERT INTO users (username, email, password_hash, plan, is_admin) VALUES (?, ?, ?, ?, ?)",
-                  (ADMIN_USER, ADMIN_EMAIL, admin_hash, 'pro', 1))
-    else:
-        c.execute("UPDATE users SET username=?, email=?, password_hash=? WHERE is_admin=1",
-                  (ADMIN_USER, ADMIN_EMAIL, admin_hash))
-    conn.commit()
+    # Upsert admin user — only when ADMIN_PASSWORD is configured
+    if ADMIN_USER and ADMIN_PASSWORD:
+        c.execute("SELECT id FROM users WHERE is_admin=1")
+        admin_row = c.fetchone()
+        admin_hash = _hash_password(ADMIN_PASSWORD)
+        if not admin_row:
+            c.execute("INSERT INTO users (username, email, password_hash, plan, is_admin) VALUES (?, ?, ?, ?, ?)",
+                      (ADMIN_USER, ADMIN_EMAIL, admin_hash, 'pro', 1))
+        else:
+            c.execute("UPDATE users SET username=?, email=?, password_hash=? WHERE is_admin=1",
+                      (ADMIN_USER, ADMIN_EMAIL, admin_hash))
+        conn.commit()
     # Create admin user (persists across deploys)
     if DEMO_MODE:
         c.execute("SELECT id FROM users WHERE username = 'demo'")
